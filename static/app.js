@@ -178,7 +178,10 @@ function addMsg(text, type = 'ai', telemetryData = null) {
 
 // HTML Escaping Helper for Telemetry JSON Inject
 function escapeHtml(str) {
-    return str
+    if (str === null || str === undefined) {
+        return "";
+    }
+    return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
