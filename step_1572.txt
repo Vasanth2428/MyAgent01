@@ -1,0 +1,35 @@
+The USER performed the following action:
+Show the contents of file c:\Users\vasan\Documents\Apphelix Intern\RAG\Issues.md from lines 112 to 138
+File Path: `file:///c:/Users/vasan/Documents/Apphelix%20Intern/RAG/Issues.md`
+Total Lines: 138
+Total Bytes: 8431
+Showing lines 112 to 138
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+112: Running tests from a different working directory will silently fail to write reports without failing the test assertion. The test passes even if the report write fails, because the `assertXxx` calls come before the write in some test methods (or the write exception isn't caught).
+113: 
+114: **14. `app.js` — `localStorage` session ID is not cleared on error**
+115: 
+116: If the backend rejects a session (e.g., corrupted history), the frontend keeps reusing the same SID forever. There's no recovery path.
+117: 
+118: ---
+119: 
+120: ## What's Actually Good
+121: 
+122: - Module decomposition is clean — `core/` package with single-responsibility classes is correct.
+123: - The retry/backoff pattern in `LLMService`, `WeaviateRetriever`, and `PersistentMemoryStore` is production-quality.
+124: - SQLite WAL mode + composite index is the right call.
+125: - SSE streaming with abort controller on the frontend is solid.
+126: - Test structure (unit/integration/stress/diagnostics) shows real engineering discipline — most students skip this entirely.
+127: - The ReAct self-correction loop (feeding format errors back as observations) is genuinely clever.
+128: 
+129: ---
+130: 
+131: ## Priority Order for Fixes
+132: 
+133: 1. XSS in `onclick` injection — security
+134: 2. Operator precedence bug in early-exit greeting — correctness
+135: 3. Upload endpoint hardening — security  
+136: 4. Stopword filter in compressor — quality (your test data already proves this is wrong)
+137: 5. `run_in_executor` exception swallowing — reliability
+138: 6. Deduplicate telemetry assembly — maintainability
+

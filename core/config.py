@@ -55,3 +55,42 @@ EXPANSION_MIN_WORDS = 5           # Queries shorter than this skip expansion
 # --- Cost (Groq Llama 3.1 8B Pricing) ---
 COST_PER_INPUT_TOKEN = 0.05 / 1_000_000
 COST_PER_OUTPUT_TOKEN = 0.08 / 1_000_000
+
+# --- Conversation Budget ---
+CONVERSATION_TOKEN_LIMIT = 15000  # Total token limit for the entire conversation session
+
+# --- REACT AGENT ---
+AGENT_CONFIG = {
+    # Core behavior
+    "max_iterations": 5,
+    "default_llm_timeout_seconds": 30,
+    
+    # Tool timeouts (by tool type)
+    "tool_timeouts": {
+        "knowledge_base": 15,
+        "web": 10,
+        "web_fetch": 15,
+        "system": 5,
+        "chat": 5,
+    },
+    
+    # Retry strategy
+    "default_retry_count": 2,
+    "retry_backoff_factor": 2.0,  # Exponential backoff multiplier
+    "max_retry_delay_seconds": 10,
+    
+    # Input validation
+    "max_query_length": 5000,
+    "min_query_length": 1,
+    "max_tool_arg_length": 1000,
+    
+    # Greeting detection
+    "greeting_words": {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"},
+    "conversational_words": {"hi", "hello", "hey", "thanks", "thank", "bye", "okay", "ok", "sure", "yes", "no", "please"},
+    "short_chat_threshold": 2,  # Words <= this triggers early exit
+    
+    # Metrics
+    "enable_metrics": True,
+    "metrics_retention_limit": 100,  # Keep last N metric entries
+}
+

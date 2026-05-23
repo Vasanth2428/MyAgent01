@@ -45,9 +45,46 @@ def count_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
 
 
-class RAGContextEngine:
+class RAGSubsystem:
     """
-    Main orchestrator for the RAG pipeline.
+    Subsystem for standard/simple Retrieval-Augmented Generation.
+    """
+    def __init__(self, system):
+        self.system = system
+
+    def ask(self, query: str, session_id: str = "default", source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Dict:
+        return self.system._ask_pipeline(query, session_id, mode="normal", source_filter=source_filter, top_k=top_k, context_limit=context_limit)
+
+    def ask_stream(self, query: str, session_id: str = "default", source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Generator[Dict, None, None]:
+        yield from self.system._ask_stream_pipeline(query, session_id, mode="normal", source_filter=source_filter, top_k=top_k, context_limit=context_limit)
+
+
+class ContextEngineSubsystem:
+    """
+    Subsystem for advanced query-expanded, re-ranked, and compressed context engine.
+    """
+    def __init__(self, system):
+        self.system = system
+
+    def ask(self, query: str, session_id: str = "default", source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Dict:
+        return self.system._ask_pipeline(query, session_id, mode="context_engine", source_filter=source_filter, top_k=top_k, context_limit=context_limit)
+
+    def ask_stream(self, query: str, session_id: str = "default", source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Generator[Dict, None, None]:
+        yield from self.system._ask_stream_pipeline(query, session_id, mode="context_engine", source_filter=source_filter, top_k=top_k, context_limit=context_limit)
+
+    def retrieve_and_compress(self, query: str, source_filter: Optional[str] = None, max_tokens: int = 1000) -> str:
+        """High-level interface for the Agentic loop to retrieve and compress context."""
+        search_queries = self.system._phase_expand(query, "context_engine", {})
+        raw_results = self.system._phase_retrieve(search_queries, 5, source_filter, {})
+        compressed = self.system.compressor.compress(
+            [r["text"] for r in raw_results], query, max_tokens=max_tokens
+        )
+        return compressed if compressed.strip() else "No matching documents found in database."
+
+
+class AgenticSystem:
+    """
+    Main orchestrator for the RAG agentic system.
     """
 
     def __init__(self, retriever: WeaviateRetriever):
@@ -69,9 +106,15 @@ class RAGContextEngine:
         self.expander = QueryExpander(self.client)
         self.hyde = HyDEGenerator(self.client)
 
+        # Initialize Subsystems
+        self.rag_subsystem = RAGSubsystem(self)
+        self.context_engine_subsystem = ContextEngineSubsystem(self)
+
         # Initialize ReAct Agent
-        from core.agent import RAGAgent
-        self.agent = RAGAgent(self)
+        from core.agent_refactored import RAGAgent
+        from core.agent_tools import ToolRegistry
+        tool_registry = ToolRegistry()
+        self.agent = RAGAgent(self, tool_registry=tool_registry)
 
     # ------------------------------------------------------------------
     # Memory helpers
@@ -90,9 +133,40 @@ class RAGContextEngine:
     def save_memory(self, session_id: str, text: str, role: str, importance: float = 1.0, telemetry: dict = None):
         """Saves a turn to both the active RAM context and persistent database."""
         import json
-        self.get_memory(session_id).add(text, importance, role)
-        telemetry_json = json.dumps(telemetry) if telemetry else None
-        self.persistent_memory.add_entry(session_id, text, role, importance, telemetry=telemetry_json)
+        is_new = self.get_memory(session_id).add(text, importance, role)
+        if is_new:
+            telemetry_json = json.dumps(telemetry) if telemetry else None
+            self.persistent_memory.add_entry(session_id, text, role, importance, telemetry=telemetry_json)
+        else:
+            logger.info(f"Deduplicated persistence for role {role} and session {session_id}.")
+
+    def _build_telemetry(self, query: str, final_context: str, overflow_occurred: bool,
+                         context_limit: Optional[int], initial_tokens: int, final_tokens: int,
+                         overflow_steps: list, mem_tokens: int, doc_tokens: int,
+                         doc_budget: int, ratio: float, exact_tokens: Optional[dict] = None,
+                         query_cost: Optional[str] = None) -> dict:
+        """Helper to build consistent telemetry details dictionary."""
+        telemetry = {
+            "query": query,
+            "raw_prompt": f"### CONTEXT:\n{final_context}\n\n### QUESTION:\n{query}\n\n### ANSWER:",
+            "overflow_occurred": overflow_occurred,
+            "limit": context_limit,
+            "initial_tokens": initial_tokens,
+            "final_tokens": final_tokens,
+            "steps": overflow_steps,
+            "budget_tracking": {
+                "memory_tokens_used": mem_tokens,
+                "memory_tokens_limit": MEMORY_TOKEN_BUDGET,
+                "document_tokens_used": doc_tokens,
+                "document_tokens_limit": doc_budget
+            },
+            "compression_ratio": round(ratio, 3)
+        }
+        if exact_tokens is not None:
+            telemetry["exact_tokens"] = exact_tokens
+        if query_cost is not None:
+            telemetry["query_cost"] = query_cost
+        return telemetry
 
     # ------------------------------------------------------------------
     # Pipeline phases (private helpers)
@@ -220,7 +294,7 @@ class RAGContextEngine:
             logger.info(f" -> Compression ratio: {ratio:.2%}")
             latencies['phase_5_compression_ms'] = round((time.time() - t) * 1000, 2)
 
-            return final_context, memory_text, final_knowledge, ratio, memory_tokens, doc_tokens, doc_budget, peak_score
+            return final_context, memory_text, final_knowledge, ratio, memory_tokens, doc_tokens, doc_budget, peak_score, Compressor._eviction_log
 
         else:
             # Simple RAG bypass
@@ -241,7 +315,7 @@ class RAGContextEngine:
 
             return (
                 "### KNOWLEDGE\n" + raw_context, "N/A", "N/A", 1.0,
-                0, count_tokens(raw_context), TOTAL_CONTEXT_BUDGET, 0.0
+                0, count_tokens(raw_context), TOTAL_CONTEXT_BUDGET, 0.0, []
             )
 
     def _phase_generate(self, query: str, final_context: str, latencies: dict):
@@ -401,6 +475,16 @@ class RAGContextEngine:
         """
         The primary entry point for querying the RAG system.
         """
+        if mode == "normal":
+            return self.rag_subsystem.ask(query, session_id, source_filter, top_k, context_limit)
+        else:
+            return self.context_engine_subsystem.ask(query, session_id, source_filter, top_k, context_limit)
+
+    def _ask_pipeline(self, query: str, session_id: str = "default", mode: str = "context_engine",
+                      source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Dict:
+        """
+        The internal execution pipeline for asking queries.
+        """
         logger.info(f"\n[INIT] Query: '{query[:60]}...' | Session: {session_id} | Mode: {mode} | Limit: {context_limit}")
         self.stats["queries"] += 1
         memory = self.get_memory(session_id)
@@ -412,7 +496,7 @@ class RAGContextEngine:
         hyde_doc = self._phase_hyde(query, mode, search_queries, latencies)
         all_raw = self._phase_retrieve(search_queries, top_k, source_filter, latencies)
         (final_context, memory_text, compressed_docs, ratio,
-         mem_tokens, doc_tokens, doc_budget, peak_score) = self._phase_refine(
+         mem_tokens, doc_tokens, doc_budget, peak_score, eviction_log) = self._phase_refine(
             query, mode, memory, all_raw, top_k, latencies
         )
 
@@ -429,25 +513,26 @@ class RAGContextEngine:
 
         response, prompt, exact_tokens, ctx_used_pct = self._phase_generate(query, final_context, latencies)
 
+        cost = (exact_tokens["prompt"] * COST_PER_INPUT_TOKEN) + (exact_tokens["completion"] * COST_PER_OUTPUT_TOKEN)
+
         # Persist interaction
         self.save_memory(session_id, query, "user")
         
-        telemetry_data = {
-            "query": query,
-            "raw_prompt": f"### CONTEXT:\n{final_context}\n\n### QUESTION:\n{query}\n\n### ANSWER:",
-            "overflow_occurred": overflow_occurred,
-            "limit": context_limit,
-            "initial_tokens": initial_tokens,
-            "final_tokens": final_prompt_tokens,
-            "steps": overflow_steps,
-            "budget_tracking": {
-                "memory_tokens_used": mem_tokens,
-                "memory_tokens_limit": MEMORY_TOKEN_BUDGET,
-                "document_tokens_used": doc_tokens,
-                "document_tokens_limit": doc_budget
-            },
-            "compression_ratio": round(ratio, 3)
-        }
+        telemetry_data = self._build_telemetry(
+            query=query,
+            final_context=final_context,
+            overflow_occurred=overflow_occurred,
+            context_limit=context_limit,
+            initial_tokens=initial_tokens,
+            final_tokens=final_prompt_tokens,
+            overflow_steps=overflow_steps,
+            mem_tokens=mem_tokens,
+            doc_tokens=doc_tokens,
+            doc_budget=doc_budget,
+            ratio=ratio,
+            exact_tokens=exact_tokens,
+            query_cost=f"${cost:.8f}"
+        )
         self.save_memory(session_id, response, "assistant", 0.8, telemetry=telemetry_data)
 
         # Compute telemetry
@@ -455,7 +540,6 @@ class RAGContextEngine:
         latencies['total_execution_ms'] = total_ms
         gen_sec = latencies.get('phase_6_generation_ms', 0.0) / 1000.0
         tps = round(exact_tokens["completion"] / gen_sec, 1) if gen_sec > 0 else 0.0
-        cost = (exact_tokens["prompt"] * COST_PER_INPUT_TOKEN) + (exact_tokens["completion"] * COST_PER_OUTPUT_TOKEN)
 
         self.stats["avg_latency_ms"] = (
             self.stats["avg_latency_ms"] * (self.stats["queries"] - 1) + total_ms
@@ -500,7 +584,8 @@ class RAGContextEngine:
                 },
                 "mode": mode,
                 "alpha": getattr(self.retriever, "alpha", 0.5),
-                "reranker_peak_score": round(peak_score, 4)
+                "reranker_peak_score": round(peak_score, 4),
+                "eviction_log": eviction_log
             }
         }
 
@@ -516,16 +601,50 @@ class RAGContextEngine:
             "### ANSWER:"
         )
         try:
-            stream = self.client.chat.completions.create(
-                model=LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=LLM_TEMPERATURE,
-                stream=True
-            )
+            try:
+                stream = self.client.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=LLM_TEMPERATURE,
+                    stream=True,
+                    stream_options={"include_usage": True}
+                )
+            except Exception as stream_opt_err:
+                logger.warning(f"Streaming options not supported: {stream_opt_err}. Retrying without stream_options...")
+                stream = self.client.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=LLM_TEMPERATURE,
+                    stream=True
+                )
             for chunk in stream:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield {"event": "answer_chunk", "text": content}
+                usage = getattr(chunk, "usage", None)
+                if usage:
+                    if isinstance(usage, dict):
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+                        total_tokens = usage.get("total_tokens", 0)
+                    else:
+                        prompt_tokens = getattr(usage, "prompt_tokens", 0)
+                        completion_tokens = getattr(usage, "completion_tokens", 0)
+                        total_tokens = getattr(usage, "total_tokens", 0)
+                    
+                    yield {
+                        "event": "usage",
+                        "usage": {
+                            "prompt": prompt_tokens,
+                            "completion": completion_tokens,
+                            "total": total_tokens
+                        }
+                    }
+                
+                choices = getattr(chunk, "choices", None)
+                if choices and len(choices) > 0:
+                    delta = getattr(choices[0], "delta", None)
+                    if delta:
+                        content = getattr(delta, "content", None)
+                        if content:
+                            yield {"event": "answer_chunk", "text": content}
         except Exception as e:
             logger.error(f"LLM Stream Error: {e}")
             yield {"event": "answer_chunk", "text": f"\n[LLM Error: {e}]"}
@@ -535,6 +654,19 @@ class RAGContextEngine:
                    source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Generator[Dict, None, None]:
         """
         Streaming query endpoint. Yields progress updates and LLM output tokens.
+        """
+        if mode == "agentic":
+            yield from self.agent.run_stream(query, session_id, source_filter, context_limit=context_limit)
+            return
+        elif mode == "normal":
+            yield from self.rag_subsystem.ask_stream(query, session_id, source_filter, top_k, context_limit)
+        else:
+            yield from self.context_engine_subsystem.ask_stream(query, session_id, source_filter, top_k, context_limit)
+
+    def _ask_stream_pipeline(self, query: str, session_id: str = "default", mode: str = "context_engine",
+                             source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Generator[Dict, None, None]:
+        """
+        Internal execution pipeline for streaming queries.
         """
         from typing import Dict as TypedDict
         if mode == "agentic":
@@ -568,7 +700,7 @@ class RAGContextEngine:
         # Step 3-5: Refine (Reranking, Memory Sync, Compression)
         yield {"event": "thought", "text": "Reranking document candidates and performing dynamic memory decay budget sizing..."}
         (final_context, memory_text, compressed_docs, ratio,
-         mem_tokens, doc_tokens, doc_budget, peak_score) = self._phase_refine(
+         mem_tokens, doc_tokens, doc_budget, peak_score, eviction_log) = self._phase_refine(
             query, mode, memory, all_raw, top_k, latencies
          )
 
@@ -603,30 +735,52 @@ class RAGContextEngine:
         
         # Save placeholder history (will be updated when final response is completed)
         accumulated_response = ""
+        exact_tokens = None
         for chunk in self._phase_generate_stream(query, final_context, latencies):
             if chunk["event"] == "answer_chunk":
                 accumulated_response += chunk["text"]
+            elif chunk["event"] == "usage":
+                exact_tokens = chunk["usage"]
             yield chunk
+
+        if not exact_tokens:
+            prompt_tokens_est = count_tokens(
+                "Answer the user question using ONLY the provided context. "
+                "If the information is missing, state that you don't know.\n\n"
+                f"### CONTEXT:\n{final_context}\n\n"
+                f"### QUESTION:\n{query}\n\n"
+                "### ANSWER:"
+            )
+            completion_tokens_est = count_tokens(accumulated_response)
+            exact_tokens = {
+                "prompt": prompt_tokens_est,
+                "completion": completion_tokens_est,
+                "total": prompt_tokens_est + completion_tokens_est
+            }
+
+        # Calculate TPS and cost for streaming response
+        gen_sec = latencies.get('phase_6_generation_ms', 0.0) / 1000.0
+        tps = round(exact_tokens["completion"] / gen_sec, 1) if gen_sec > 0 else 0.0
+        cost = (exact_tokens["prompt"] * COST_PER_INPUT_TOKEN) + (exact_tokens["completion"] * COST_PER_OUTPUT_TOKEN)
 
         # Persist interaction
         self.save_memory(session_id, query, "user")
         
-        telemetry_data = {
-            "query": query,
-            "raw_prompt": f"### CONTEXT:\n{final_context}\n\n### QUESTION:\n{query}\n\n### ANSWER:",
-            "overflow_occurred": overflow_occurred,
-            "limit": context_limit,
-            "initial_tokens": initial_tokens,
-            "final_tokens": final_prompt_tokens,
-            "steps": overflow_steps,
-            "budget_tracking": {
-                "memory_tokens_used": mem_tokens,
-                "memory_tokens_limit": MEMORY_TOKEN_BUDGET,
-                "document_tokens_used": doc_tokens,
-                "document_tokens_limit": doc_budget
-            },
-            "compression_ratio": round(ratio, 3)
-        }
+        telemetry_data = self._build_telemetry(
+            query=query,
+            final_context=final_context,
+            overflow_occurred=overflow_occurred,
+            context_limit=context_limit,
+            initial_tokens=initial_tokens,
+            final_tokens=final_prompt_tokens,
+            overflow_steps=overflow_steps,
+            mem_tokens=mem_tokens,
+            doc_tokens=doc_tokens,
+            doc_budget=doc_budget,
+            ratio=ratio,
+            exact_tokens=exact_tokens,
+            query_cost=f"${cost:.8f}"
+        )
         self.save_memory(session_id, accumulated_response, "assistant", 0.8, telemetry=telemetry_data)
 
         total_ms = round((time.time() - t_start) * 1000, 2)
@@ -644,6 +798,15 @@ class RAGContextEngine:
             "avg_latency_ms": round(self.stats["avg_latency_ms"], 2),
             "cpu_usage_percent": psutil.cpu_percent(interval=None),
             "memory_usage_percent": psutil.virtual_memory().percent,
+            "context_used_percent": round((final_prompt_tokens / CONTEXT_WINDOW_LIMIT) * 100, 2) if CONTEXT_WINDOW_LIMIT else 0,
+            "tps": tps,
+            "query_cost": f"${cost:.8f}",
+            "exact_tokens": exact_tokens,
+            "search_queries": search_queries,
+            "hyde_doc": hyde_doc,
+            "mode": mode,
+            "alpha": getattr(self.retriever, "alpha", 0.5),
+            "reranker_peak_score": round(peak_score, 4),
             "overflow_telemetry": {
                 "overflow_occurred": overflow_occurred,
                 "limit": context_limit,
@@ -658,9 +821,13 @@ class RAGContextEngine:
                 "document_tokens_limit": doc_budget
             },
             "retrieved_context": all_raw[:top_k],
-            "raw_prompt": f"### CONTEXT:\n{final_context}\n\n### QUESTION:\n{query}\n\n### ANSWER:"
+            "raw_prompt": f"### CONTEXT:\n{final_context}\n\n### QUESTION:\n{query}\n\n### ANSWER:",
+            "eviction_log": eviction_log
         }}
 
     def close(self):
         """Cleanup resources."""
         self.retriever.close()
+
+
+RAGContextEngine = AgenticSystem

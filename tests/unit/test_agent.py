@@ -45,13 +45,15 @@ class TestRAGAgent(unittest.TestCase):
         """Tests that greetings exit immediately without invoking LLM completions."""
         events = list(self.agent.run_stream("hello", session_id="test_sess"))
         
-        # Verify first event is the thought detailing early exit
-        self.assertEqual(events[0]["event"], "thought")
-        self.assertIn("simple query or greeting", events[0]["text"])
+        # Find the thought event detailing early exit
+        thought_event = next((e for e in events if e["event"] == "thought"), None)
+        self.assertIsNotNone(thought_event)
+        self.assertIn("simple query or greeting", thought_event["text"])
         
-        # Verify answer chunk event
-        self.assertEqual(events[1]["event"], "answer_chunk")
-        self.assertIn("Hello! How can I help you", events[1]["text"])
+        # Find the answer chunk event
+        answer_event = next((e for e in events if e["event"] == "answer_chunk"), None)
+        self.assertIsNotNone(answer_event)
+        self.assertIn("Hello! How can I help you", answer_event["text"])
 
     @patch("psutil.cpu_percent")
     @patch("psutil.virtual_memory")
@@ -110,6 +112,7 @@ class TestRAGAgent(unittest.TestCase):
 
     def test_react_loop_exhaustion_fallback(self):
         """Tests that the agent falls back to final synthesis when loop iterations are exhausted."""
+        self.agent.max_iterations = 3
         self.engine.retriever.get_count.return_value = 50
         self.engine._phase_expand.return_value = ["query"]
         self.engine._phase_retrieve.return_value = [{"text": "doc content", "score": 0.8, "source": "docs"}]

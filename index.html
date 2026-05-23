@@ -3,33 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAG CONTEXT HUB & HUD CONSOLE</title>
-    <meta name="description" content="Advanced Neural Retrieval-Augmented Generation & Context Overflow Simulator">
+    <title>RAG Agent Workspace</title>
+    <meta name="description" content="Agentic RAG Workspace">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Geist+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <header>
         <div class="header-brand">
             <div class="logo-glow"></div>
-            <span class="sys-title">RAG_CONTEXT_ORCHESTRATOR</span>
-            <span class="sys-version">v2.1.0-sim</span>
+            <span class="sys-title">RAG Agent</span>
+            <span class="sys-version">local</span>
         </div>
         <div class="status-strip">
             <span class="status-indicator">
                 <span class="status-dot online"></span>
-                CORE_STATUS: <strong style="color: var(--accent-cyan);">ONLINE</strong>
+                Status: <strong>Online</strong>
             </span>
-            <span class="status-item">INDEXED_DOCS: <strong id="knowledge-count" class="glow-value">0</strong></span>
+            <span class="status-item">Indexed docs: <strong id="knowledge-count" class="glow-value">0</strong></span>
             <div class="session-badge-container" style="display: inline-flex; align-items: center; gap: 5px;">
                 <span id="session-tag" class="session-badge">SID: ...</span>
-                <button type="button" id="reset-session-btn" class="hud-mini-btn" title="Reset Session Thread" style="background: rgba(255, 65, 54, 0.15); border: 1px solid rgba(255, 65, 54, 0.3); color: #ff4136; font-size: 0.65rem; padding: 2px 6px; border-radius: 3px; cursor: pointer; font-family: var(--font-mono); font-weight: bold; transition: all 0.2s; vertical-align: middle;">RESET</button>
+                <button type="button" id="reset-session-btn" class="hud-mini-btn reset-session-btn" title="Reset session thread">Reset</button>
             </div>
             
-            <!-- CONTEXT BUDGET DROPDOWN -->
+            <!-- Context budget -->
             <div class="budget-dropdown-container">
                 <button type="button" id="budget-dropdown-trigger" class="hud-dropdown-btn">
                     <svg class="dropdown-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; margin-right: 5px; vertical-align: middle; color: var(--accent-cyan);">
@@ -43,15 +45,15 @@
                         <line x1="9" y1="8" x2="15" y2="8"></line>
                         <line x1="17" y1="16" x2="23" y2="16"></line>
                     </svg>
-                    <span>BUDGET: <strong id="header-budget-readout" class="glow-value">0 / 4096</strong> TKN</span>
+                    <span>Budget <strong id="header-budget-readout" class="glow-value">0 / 4096</strong></span>
                     <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 10px; height: 10px; margin-left: 5px; opacity: 0.7; vertical-align: middle;"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
                 <div id="budget-dropdown-menu" class="budget-dropdown-menu">
                     <!-- Progress Bar -->
                     <div class="budget-progress-section">
                         <div class="progress-labels">
-                            <span class="lbl-used">PROMPT: <strong id="token-used-val">0</strong> TKN</span>
-                            <span class="lbl-limit">LIMIT: <strong id="token-limit-val-readout">4096</strong> TKN</span>
+                            <span class="lbl-used">Prompt <strong id="token-used-val">0</strong></span>
+                            <span class="lbl-limit">Limit <strong id="token-limit-val-readout">4096</strong></span>
                         </div>
                         <div class="progress-bar-container">
                             <div id="token-progress-fill" class="progress-fill" style="width: 0%;"></div>
@@ -62,198 +64,242 @@
                     <!-- Slider Control -->
                     <div class="slider-control-group">
                         <div class="slider-labels">
-                            <span>EFFECTIVE WINDOW LIMIT</span>
-                            <span class="slider-val-glow"><span id="context-limit-slider-val">4096</span> TKN</span>
+                            <span>Context window</span>
+                            <span class="slider-val-glow"><span id="context-limit-slider-val">4096</span></span>
                         </div>
                         <input type="range" id="context-limit-slider" min="200" max="8192" value="4096" step="50" class="hud-slider">
                     </div>
 
                     <!-- Presets -->
                     <div class="preset-group">
-                        <span class="control-sublabel">WINDOW SIZE PRESETS</span>
+                        <span class="control-sublabel">Presets</span>
                         <div class="preset-grid">
-                            <button type="button" class="preset-btn pulse-warning" data-val="300">300 TKN (Simulate)</button>
-                            <button type="button" class="preset-btn" data-val="800">800 TKN</button>
-                            <button type="button" class="preset-btn" data-val="1500">1500 TKN</button>
-                            <button type="button" class="preset-btn active" data-val="4096">4096 TKN</button>
+                            <button type="button" class="preset-btn pulse-warning" data-val="300">300 tokens</button>
+                            <button type="button" class="preset-btn" data-val="800">800 tokens</button>
+                            <button type="button" class="preset-btn" data-val="1500">1500 tokens</button>
+                            <button type="button" class="preset-btn active" data-val="4096">4096 tokens</button>
                         </div>
                     </div>
                 </div>
             </div>
-            <button id="toggle-left-sidebar" class="hud-mini-btn panel-toggle-btn" title="Toggle Logs Panel" aria-label="Toggle logs panel">
+            <button id="toggle-left-sidebar" class="hud-mini-btn panel-toggle-btn" title="Open Agent Trace" aria-label="Open agent trace">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
             </button>
-            <button id="toggle-right-sidebar" class="hud-mini-btn panel-toggle-btn" title="Toggle Telemetry Panel" aria-label="Toggle telemetry panel">
+            <button id="toggle-right-sidebar" class="hud-mini-btn panel-toggle-btn" title="Open Evidence Workspace" aria-label="Open evidence workspace">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>
             </button>
         </div>
     </header>
 
     <div class="main-grid">
-        <!-- LEFT PANEL: TABBED INTERFACE FOR LOGS, OVERFLOW, INSPECTOR, EVICTED -->
-        <div class="sidebar-left">
-            <div class="tab-navigation">
-                <button class="tab-btn active" data-tab="logs">LOGS</button>
-                <button class="tab-btn" data-tab="overflow">
-                    <span>OVERFLOW</span>
-                    <span id="overflow-indicator-dot" class="indicator-dot nominal"></span>
-                </button>
-                <button class="tab-btn" data-tab="inspector">INSPECTOR</button>
-                <button class="tab-btn" data-tab="evicted">EVICTED</button>
-            </div>
-
-            
-            <div class="tab-content">
-                <div id="tab-logs" class="tab-panel active">
-                    <div class="box">
-                        <div id="log-window" class="log-container"></div>
-                    </div>
-                </div>
-                
-                <div id="tab-overflow" class="tab-panel">
-                    <div class="box">
-                        <div id="overflow-alert-banner" class="overflow-banner alert-nominal">
-                            SYSTEM RUNNING IN NOMINAL STATE
-                        </div>
-                        <div id="overflow-log-window" class="log-container overflow-log">
-                            <div class="empty-shell-msg">Awaiting context overflow simulation trigger...</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div id="tab-inspector" class="tab-panel">
-                    <div class="box">
-                        <div id="inspector-window" class="inspector-container">
-                            <div class="inspector-placeholder">Awaiting next transaction to stream telemetry...</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div id="tab-evicted" class="tab-panel">
-                    <div class="box">
-                        <div id="evicted-content-window" class="evicted-container">
-                            <div class="evicted-placeholder">No content evicted yet. Overflow events will appear here.</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- CENTER PANEL: CHAT THREAD -->
+        <!-- Chat thread -->
         <div class="box chat-container">
             <div class="section-label chat-header">
-                <span class="label-text">INTERACTION_THREAD</span>
+                <span class="label-text">Agent session</span>
                 <div class="mode-select-container">
-                    <span class="mode-badge"><span class="mode-badge-dot pulse"></span>SYSTEM_MODE: <span class="mode-badge-text">AUTONOMOUS_AGENT</span></span>
+                    <span class="mode-badge"><span class="mode-badge-dot pulse"></span>Agent ready</span>
+                </div>
+            </div>
+            <div class="agent-briefing">
+                <div class="agent-status-card">
+                    <span class="agent-status-kicker">Local RAG workspace</span>
+                    <strong>Ask a question and inspect the agent run when you need the details.</strong>
+                </div>
+                <div class="agent-action-strip">
+                    <button type="button" class="agent-panel-btn" data-workbench-open="logs">Trace</button>
+                    <button type="button" class="agent-panel-btn" data-workbench-open="knowledge">Evidence</button>
+                    <button type="button" class="agent-panel-btn" data-workbench-open="inspector">Inspector</button>
                 </div>
             </div>
             <div id="chat-window"></div>
             <form id="comm-form" class="input-bar">
-                <button type="button" id="upload-trigger-btn" class="upload-trigger-btn" title="Inject Document (PDF/TXT)">
-                    <svg class="upload-icon-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                    </svg>
-                </button>
-                <input type="file" id="file-in" style="display: none;">
-                <div class="input-wrapper">
-                    <div id="up-msg" class="upload-feedback" style="display: none;"></div>
-                    <textarea id="comm-input" placeholder="Ask a question, compare documents, or request web-backed research..." required autofocus autocomplete="off" rows="1"></textarea>
-                    <div class="input-glow"></div>
-                    <div class="input-hint">Enter to send / Shift+Enter for newline</div>
+                <div class="input-container-box">
+                    <button type="button" id="upload-trigger-btn" class="upload-trigger-btn" title="Inject Document (PDF/TXT)">
+                        <svg class="upload-icon-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                        </svg>
+                    </button>
+                    <input type="file" id="file-in" style="display: none;">
+                    <div class="input-wrapper">
+                        <div id="up-msg" class="upload-feedback" style="display: none;"></div>
+                        <textarea id="comm-input" placeholder="Ask a question, compare documents, or request web-backed research..." required autofocus autocomplete="off" rows="1"></textarea>
+                        <div class="input-glow"></div>
+                        <div class="input-hint">Enter to send / Shift+Enter for newline</div>
+                    </div>
+                    <button type="submit" id="comm-btn" class="glow-btn" title="Send message">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="19" x2="12" y2="5"></line>
+                            <polyline points="5 12 12 5 19 12"></polyline>
+                        </svg>
+                        <span class="sr-only" style="display: none;">Ask</span>
+                    </button>
+                    <button type="button" id="stop-btn" class="abort-btn" style="display: none;" title="Stop generation">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        </svg>
+                        <span style="display: none;">Stop</span>
+                    </button>
                 </div>
-                <button type="submit" id="comm-btn" class="glow-btn">
-                    <span>ASK</span>
-                    <div class="btn-glow"></div>
-                </button>
-                <button type="button" id="stop-btn" class="abort-btn" style="display: none;">
-                    <span>STOP</span>
-                </button>
             </form>
         </div>
 
-        <!-- RIGHT PANEL: TELEMETRY, CONTROL & CONTEXT DUMP -->
-        <div class="sidebar-right">
-
-            <!-- SYSTEM METRICS HUD -->
-            <div class="box box-stats">
-                <div class="section-label">PERFORMANCE_METRICS_HUD</div>
-                <div class="stats-panel">
-                    <div class="stat-box">
-                        <span id="stat-q" class="stat-val">0</span>
-                        <span class="stat-key">TOTAL_QUERIES</span>
-                    </div>
-                    <div class="stat-box">
-                        <span id="stat-c" class="stat-val">0%</span>
-                        <span class="stat-key">COMPRESSION_RATIO</span>
-                    </div>
-                    <div class="stat-box">
-                        <span id="stat-t" class="stat-val">0ms</span>
-                        <span class="stat-key">ROUND_TRIP_LATENCY</span>
-                    </div>
-                    <div class="stat-box">
-                        <span id="stat-m" class="stat-val">0</span>
-                        <span class="stat-key">CONVERSATION_TURNS</span>
-                    </div>
-                    <div class="stat-box">
-                        <span id="stat-cpu" class="stat-val">0%</span>
-                        <span class="stat-key">HOST_CPU</span>
-                    </div>
-                    <div class="stat-box">
-                        <span id="stat-ram" class="stat-val">0%</span>
-                        <span class="stat-key">HOST_RAM</span>
-                    </div>
-                    <div class="stat-box">
-                        <span id="stat-ctx" class="stat-val">0%</span>
-                        <span class="stat-key">PROMPT_WINDOW</span>
-                    </div>
+    <section id="agent-workbench" class="agent-workbench" aria-hidden="true">
+        <div class="agent-workbench-backdrop" data-workbench-close></div>
+        <div class="agent-workbench-panel" role="dialog" aria-modal="true" aria-labelledby="agent-workbench-title">
+            <div class="agent-workbench-header">
+                <div>
+                    <span class="agent-status-kicker">Agent workspace</span>
+                    <h2 id="agent-workbench-title">Trace, evidence, and runtime state</h2>
+                </div>
+                <div class="agent-workbench-actions">
+                    <button type="button" class="agent-workbench-tab active" data-workbench-tab="trace">Trace</button>
+                    <button type="button" class="agent-workbench-tab" data-workbench-tab="evidence">Evidence</button>
+                    <button type="button" class="agent-workbench-tab" data-workbench-tab="metrics">Metrics</button>
+                    <button type="button" class="agent-workbench-close" data-workbench-close aria-label="Close agent workspace">&times;</button>
                 </div>
             </div>
 
-            <!-- DATA TELEMETRY TABS SECTION -->
-            <div class="box data-panel-tabs">
-                <div class="tab-navigation-right">
-                    <button class="tab-btn-right active" data-tab-right="knowledge">
-                        <span>KNOWLEDGE</span>
-                        <span id="badge-knowledge" class="tab-badge-dot"></span>
-                    </button>
-                    <button class="tab-btn-right" data-tab-right="evictions">
-                        <span>EVICTIONS</span>
-                        <span id="badge-evictions" class="tab-badge-dot"></span>
-                    </button>
-                    <button class="tab-btn-right" data-tab-right="traversal">
-                        <span>TRAVERSAL</span>
-                        <span id="badge-traversal" class="tab-badge-dot"></span>
-                    </button>
-                </div>
-                
-                <div class="tab-content-right">
-                    <div id="tab-right-knowledge" class="tab-panel-right active">
-                        <div id="recon-window" class="readout-list">
-                            <div class="readout-empty">No active retrieval context. Submit a query to see documents.</div>
+            <div class="agent-workbench-body">
+                <div class="workbench-page active" id="workbench-trace" data-workbench-page="trace">
+                    <div class="sidebar-left">
+                        <div class="tab-navigation">
+                            <button class="tab-btn active" data-tab="logs">Logs</button>
+                            <button class="tab-btn" data-tab="overflow">
+                                <span>Overflow</span>
+                                <span id="overflow-indicator-dot" class="indicator-dot nominal"></span>
+                            </button>
+                            <button class="tab-btn" data-tab="inspector">Inspector</button>
+                            <button class="tab-btn" data-tab="evicted">Evicted</button>
                         </div>
-                    </div>
-                    
-                    <div id="tab-right-evictions" class="tab-panel-right">
-                        <div id="eviction-window" class="readout-list eviction-list">
-                            <div class="readout-empty">No compression data. Submit a query to see kept/dropped segments.</div>
-                        </div>
-                    </div>
 
-                    <div id="tab-right-traversal" class="tab-panel-right">
-                        <div id="traversal-window" class="readout-list">
-                            <div class="readout-empty">No web traversal data. Submit a query requiring web search/fetch.</div>
+                        <div class="tab-content">
+                            <div id="tab-logs" class="tab-panel active">
+                                <div class="box">
+                                    <div id="log-window" class="log-container"></div>
+                                </div>
+                            </div>
+
+                            <div id="tab-overflow" class="tab-panel">
+                                <div class="box">
+                                    <div id="overflow-alert-banner" class="overflow-banner alert-nominal">
+                                        System running normally
+                                    </div>
+                                    <div id="overflow-log-window" class="log-container overflow-log">
+                                        <div class="empty-shell-msg">Awaiting context overflow simulation trigger...</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="tab-inspector" class="tab-panel">
+                                <div class="box">
+                                    <div id="inspector-window" class="inspector-container">
+                                        <div class="inspector-placeholder">Awaiting next transaction to stream telemetry...</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="tab-evicted" class="tab-panel">
+                                <div class="box">
+                                    <div id="evicted-content-window" class="evicted-container">
+                                        <div class="evicted-placeholder">No content evicted yet. Overflow events will appear here.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="workbench-page" id="workbench-evidence" data-workbench-page="evidence">
+                    <div class="sidebar-right">
+
+                        <!-- Evidence tabs -->
+                        <div class="box data-panel-tabs">
+                            <div class="tab-navigation-right">
+                                <button class="tab-btn-right active" data-tab-right="knowledge">
+                                    <span>Knowledge</span>
+                                    <span id="badge-knowledge" class="tab-badge-dot"></span>
+                                </button>
+                                <button class="tab-btn-right" data-tab-right="evictions">
+                                    <span>Evictions</span>
+                                    <span id="badge-evictions" class="tab-badge-dot"></span>
+                                </button>
+                                <button class="tab-btn-right" data-tab-right="traversal">
+                                    <span>Traversal</span>
+                                    <span id="badge-traversal" class="tab-badge-dot"></span>
+                                </button>
+                            </div>
+
+                            <div class="tab-content-right">
+                                <div id="tab-right-knowledge" class="tab-panel-right active">
+                                    <div id="recon-window" class="readout-list">
+                                        <div class="readout-empty">No active retrieval context. Submit a query to see documents.</div>
+                                    </div>
+                                </div>
+
+                                <div id="tab-right-evictions" class="tab-panel-right">
+                                    <div id="eviction-window" class="readout-list eviction-list">
+                                        <div class="readout-empty">No compression data. Submit a query to see kept/dropped segments.</div>
+                                    </div>
+                                </div>
+
+                                <div id="tab-right-traversal" class="tab-panel-right">
+                                    <div id="traversal-window" class="readout-list">
+                                        <div class="readout-empty">No web traversal data. Submit a query requiring web search/fetch.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="workbench-page" id="workbench-metrics" data-workbench-page="metrics">
+                    <div class="sidebar-right metrics-workbench">
+                        <!-- Metrics -->
+                        <div class="box box-stats">
+                            <div class="section-label">Metrics</div>
+                            <div class="stats-panel">
+                                <div class="stat-box">
+                                    <span id="stat-q" class="stat-val">0</span>
+                                    <span class="stat-key">Queries</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span id="stat-c" class="stat-val">0%</span>
+                                    <span class="stat-key">Compression</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span id="stat-t" class="stat-val">0ms</span>
+                                    <span class="stat-key">Latency</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span id="stat-m" class="stat-val">0</span>
+                                    <span class="stat-key">Turns</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span id="stat-cpu" class="stat-val">0%</span>
+                                    <span class="stat-key">CPU</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span id="stat-ram" class="stat-val">0%</span>
+                                    <span class="stat-key">RAM</span>
+                                </div>
+                                <div class="stat-box">
+                                    <span id="stat-ctx" class="stat-val">0%</span>
+                                    <span class="stat-key">Prompt window</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
+</div>
 
     <!-- Telemetry Modal -->
     <div id="telemetry-modal" class="modal-backdrop">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>CONTEXT_OVERFLOW_TELEMETRY_REPORT</h3>
+                <h3>Context telemetry</h3>
                 <button type="button" class="modal-close">&times;</button>
             </div>
             <div class="modal-body" id="telemetry-modal-body"></div>

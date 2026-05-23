@@ -66,9 +66,10 @@ class ConversationMemory:
         self.decay_rate = decay_rate
         self.max_tokens = max_tokens
 
-    def add(self, text: str, importance: float = 1.0, role: str = "user"):
+    def add(self, text: str, importance: float = 1.0, role: str = "user") -> bool:
         """
         Adds a turn to memory. If semantically similar text exists, resets its timer.
+        Returns True if a new entry was added, False if it was deduplicated.
         """
         for existing in self.entries:
             overlap = self._text_overlap(existing.text, text)
@@ -76,9 +77,10 @@ class ConversationMemory:
                 logger.debug(f"Deduplicating {role} entry (Overlap: {overlap:.2f}).")
                 existing.touch()
                 existing.base_importance = max(existing.base_importance, importance)
-                return
+                return False
         logger.debug(f"Adding new {role} entry. Total active: {len(self.entries) + 1}")
         self.entries.append(MemoryEntry(text, importance, role))
+        return True
 
     @staticmethod
     def _text_overlap(a: str, b: str) -> float:

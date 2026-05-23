@@ -29,8 +29,8 @@ logger = logging.getLogger("RAG.Retriever")
 # Technical keywords that signal a query should favor BM25 keyword matching
 _TECHNICAL_KEYWORDS = [
     "error", "exception", "status", "syntax", "null", "none",
-    "def ", "class ", "import ", "void", "public", "private",
-    "int ", "str ", "code"
+    "def", "class", "import", "void", "public", "private",
+    "int", "str", "code"
 ]
 
 
@@ -148,11 +148,12 @@ class WeaviateRetriever:
                         vector=embeddings[i].tolist() if hasattr(embeddings[i], "tolist") else embeddings[i],
                         uuid=doc_id
                     )
-            failed = self.collection.batch.failed_objects
-            if failed:
-                raise weaviate.exceptions.WeaviateQueryError(
-                    f"Weaviate batch insert failed for {len(failed)} objects. First error: {failed[0].message}"
-                )
+                batch.flush()
+                failed = self.collection.batch.failed_objects
+                if failed:
+                    raise weaviate.exceptions.WeaviateQueryError(
+                        f"Weaviate batch insert failed for {len(failed)} objects. First error: {failed[0].message}"
+                    )
 
         self.execute_with_retry(_batch_insert)
 
@@ -168,7 +169,8 @@ class WeaviateRetriever:
         Technical/code queries shift toward BM25 keyword matching.
         """
         query_lower = query.lower()
-        if any(kw in query_lower for kw in _TECHNICAL_KEYWORDS) or re.search(r'[\{\}\[\]\(\)\.\\_\|]', query):
+        query_words = set(re.findall(r'\w+', query_lower))
+        if any(kw in query_words for kw in _TECHNICAL_KEYWORDS) or re.search(r'[\{\}\[\]\(\)\.\\_\|]', query):
             return HYBRID_ALPHA_KEYWORD
         return HYBRID_ALPHA_DEFAULT
 
@@ -226,6 +228,17 @@ class WeaviateRetriever:
             return self.execute_with_retry(_aggregate)
         except Exception:
             return 0
+
+    def get_sources(self) -> List[str]:
+        """Returns a list of all unique source names in the collection."""
+        try:
+            def _aggregate():
+                res = self.collection.aggregate.over_all(group_by="source")
+                return [group.grouped_by.value for group in res.groups if group.grouped_by and group.grouped_by.value]
+            return self.execute_with_retry(_aggregate)
+        except Exception as e:
+            logger.error(f"Failed to aggregate sources: {e}")
+            return []
 
     def close(self):
         """Safely terminates the connection to Weaviate Cloud."""

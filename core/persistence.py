@@ -9,9 +9,10 @@ import sqlite3
 import time
 import logging
 import random
+import json
 from typing import List, Dict
 
-from core.config import DB_PATH, HISTORY_LIMIT
+from core.config import DB_PATH, HISTORY_LIMIT, CONVERSATION_TOKEN_LIMIT
 
 logger = logging.getLogger("RAG.Persistence")
 
@@ -101,3 +102,42 @@ class PersistentMemoryStore:
         res = self.execute_with_retry(_fetch)
         logger.info(f"Restored {len(res)} entries for session {session_id} in {(time.time() - t_start)*1000:.1f}ms")
         return res
+
+    def get_session_stats(self, session_id: str) -> dict:
+        """Calculates cumulative token usage and costs for a session_id."""
+        t_start = time.time()
+        def _fetch_stats(conn):
+            cursor = conn.execute(
+                "SELECT telemetry FROM memory WHERE session_id = ? AND role = 'assistant'",
+                (session_id,)
+            )
+            total_tokens = 0
+            total_cost = 0.0
+            for row in cursor.fetchall():
+                telemetry_str = row[0]
+                if telemetry_str:
+                    try:
+                        telemetry = json.loads(telemetry_str)
+                        if "exact_tokens" in telemetry:
+                            total_tokens += telemetry["exact_tokens"].get("total", 0)
+                        elif "budget_tracking" in telemetry:
+                            bt = telemetry["budget_tracking"]
+                            total_tokens += bt.get("memory_tokens_used", 0) + bt.get("document_tokens_used", 0)
+                        
+                        if "query_cost" in telemetry:
+                            cost_val = telemetry["query_cost"]
+                            if isinstance(cost_val, str):
+                                cost_val = cost_val.replace("$", "")
+                            try:
+                                total_cost += float(cost_val)
+                            except ValueError:
+                                pass
+                    except Exception as e:
+                        logger.warning(f"Error parsing telemetry json: {e}")
+            return {"convo_tokens_used": total_tokens, "convo_cost": total_cost}
+        
+        res = self.execute_with_retry(_fetch_stats)
+        res["convo_tokens_limit"] = CONVERSATION_TOKEN_LIMIT
+        logger.debug(f"Computed stats for session {session_id}: {res} in {(time.time() - t_start)*1000:.1f}ms")
+        return res
+

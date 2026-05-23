@@ -541,7 +541,125 @@ class TestRetrieverRobustness(unittest.TestCase):
         self.assertEqual(mock_op.call_count, 1)
         self.assertEqual(mock_sleep.call_count, 0)
 
+class TestEngineStreaming(unittest.TestCase):
+    @patch('core.engine.WeaviateRetriever')
+    def setUp(self, mock_retriever):
+        from core.engine import RAGContextEngine
+        # Setup engine with mocked retriever
+        self.engine = RAGContextEngine(mock_retriever)
+        self.engine.client = MagicMock()
+
+    def test_phase_generate_stream_with_usage(self):
+        # Mock chunk with choices and chunk with usage
+        class MockChunk:
+            def __init__(self, content=None, usage=None):
+                if content:
+                    choice = MagicMock()
+                    choice.delta.content = content
+                    self.choices = [choice]
+                else:
+                    self.choices = []
+                if usage:
+                    self.usage = MagicMock()
+                    self.usage.prompt_tokens = usage.get("prompt_tokens", 0)
+                    self.usage.completion_tokens = usage.get("completion_tokens", 0)
+                    self.usage.total_tokens = usage.get("total_tokens", 0)
+                else:
+                    self.usage = None
+
+        chunks = [
+            MockChunk(content="Hello"),
+            MockChunk(content=" world"),
+            MockChunk(usage={"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12})
+        ]
+        self.engine.client.chat.completions.create.return_value = chunks
+
+        latencies = {}
+        events = list(self.engine._phase_generate_stream("query", "context", latencies))
+
+        # Check choices contents
+        answer_chunks = [e["text"] for e in events if e["event"] == "answer_chunk"]
+        self.assertEqual(answer_chunks, ["Hello", " world"])
+
+        # Check usage contents
+        usage_events = [e["usage"] for e in events if e["event"] == "usage"]
+        self.assertEqual(len(usage_events), 1)
+        self.assertEqual(usage_events[0]["prompt"], 10)
+        self.assertEqual(usage_events[0]["completion"], 2)
+        self.assertEqual(usage_events[0]["total"], 12)
+
+    def test_ask_stream_collects_exact_tokens(self):
+        # Mock retrieve, expansion, etc.
+        self.engine._phase_expand = MagicMock(return_value=["query"])
+        self.engine._phase_hyde = MagicMock(return_value="")
+        self.engine._phase_retrieve = MagicMock(return_value=[])
+        self.engine._phase_refine = MagicMock(return_value=("context", "memory", "docs", 1.0, 0, 0, 4096, 0.0, []))
+        self.engine.save_memory = MagicMock()
+
+        class MockChunk:
+            def __init__(self, content=None, usage=None):
+                if content:
+                    choice = MagicMock()
+                    choice.delta.content = content
+                    self.choices = [choice]
+                else:
+                    self.choices = []
+                if usage:
+                    self.usage = MagicMock()
+                    self.usage.prompt_tokens = usage.get("prompt_tokens", 0)
+                    self.usage.completion_tokens = usage.get("completion_tokens", 0)
+                    self.usage.total_tokens = usage.get("total_tokens", 0)
+                else:
+                    self.usage = None
+
+        chunks = [
+            MockChunk(content="Response content"),
+            MockChunk(usage={"prompt_tokens": 15, "completion_tokens": 3, "total_tokens": 18})
+        ]
+        self.engine.client.chat.completions.create.return_value = chunks
+
+        events = list(self.engine.ask_stream("query", session_id="test_sess"))
+
+        # Find "done" event
+        done_events = [e for e in events if e["event"] == "done"]
+        self.assertEqual(len(done_events), 1)
+        stats = done_events[0]["stats"]
+        self.assertEqual(stats["exact_tokens"]["prompt"], 15)
+        self.assertEqual(stats["exact_tokens"]["completion"], 3)
+        self.assertEqual(stats["exact_tokens"]["total"], 18)
+
+    def test_ask_stream_fallback_estimation(self):
+        # Mock retrieve, expansion, etc.
+        self.engine._phase_expand = MagicMock(return_value=["query"])
+        self.engine._phase_hyde = MagicMock(return_value="")
+        self.engine._phase_retrieve = MagicMock(return_value=[])
+        self.engine._phase_refine = MagicMock(return_value=("context", "memory", "docs", 1.0, 0, 0, 4096, 0.0, []))
+        self.engine.save_memory = MagicMock()
+
+        # No usage is yielded in chunks (e.g. stream_options not supported)
+        class MockChunk:
+            def __init__(self, content=None):
+                choice = MagicMock()
+                choice.delta.content = content
+                self.choices = [choice]
+
+        chunks = [
+            MockChunk(content="Response content estimation")
+        ]
+        self.engine.client.chat.completions.create.return_value = chunks
+
+        events = list(self.engine.ask_stream("query", session_id="test_sess"))
+
+        done_events = [e for e in events if e["event"] == "done"]
+        self.assertEqual(len(done_events), 1)
+        stats = done_events[0]["stats"]
+        self.assertIsNotNone(stats["exact_tokens"])
+        self.assertGreater(stats["exact_tokens"]["prompt"], 0)
+        self.assertGreater(stats["exact_tokens"]["completion"], 0)
+        self.assertEqual(stats["exact_tokens"]["total"], stats["exact_tokens"]["prompt"] + stats["exact_tokens"]["completion"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

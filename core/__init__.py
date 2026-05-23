@@ -4,7 +4,7 @@ RAG Context Engine - Core Package
 Public API surface for the core pipeline modules.
 """
 
-from core.engine import RAGContextEngine
+from core.engine import RAGContextEngine, AgenticSystem
 from core.retriever import WeaviateRetriever
 from core.memory import ConversationMemory, MemoryEntry
 from core.persistence import PersistentMemoryStore
@@ -15,6 +15,7 @@ from core.hyde import HyDEGenerator
 from core.splitter import RecursiveCharacterSplitter
 
 __all__ = [
+    "AgenticSystem",
     "RAGContextEngine",
     "WeaviateRetriever",
     "ConversationMemory",

@@ -14,9 +14,9 @@ The 'Lost in the Middle' problem is a well-documented phenomenon in AI research.
 
 | Position of Target Fact | Found by Compressor? | Compressed Tokens |
 |------------------------|---------------------|-------------------|
-| Beginning | ✅ Yes | 38 |
-| Middle | ✅ Yes | 38 |
-| End | ✅ Yes | 38 |
+| Beginning | ✅ Yes | 15 |
+| Middle | ✅ Yes | 15 |
+| End | ✅ Yes | 15 |
 
 ### Overall: ✅ No positional bias detected
 

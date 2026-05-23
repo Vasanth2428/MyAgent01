@@ -107,7 +107,7 @@ const AppState = {
         setSubmitReady();
         if (btn) {
             const label = btn.querySelector('span');
-            if (label) label.textContent = generating ? 'RUNNING' : 'ASK';
+            if (label) label.textContent = generating ? 'Running' : 'Ask';
         }
         if (stopBtn) stopBtn.style.display = generating ? 'inline-block' : 'none';
         addLog(generating ? "System transitioned to state: GENERATING" : "System transitioned to state: IDLE", "STATE");
@@ -221,7 +221,7 @@ function renderEvictedContent(evictedData) {
             html += `<div class="evicted-item memory-evicted">
                 <div class="evicted-header">
                     <span class="evicted-badge memory-badge">${item.role}</span>
-                    <span class="evicted-tokens">${item.tokens} TKN</span>
+                    <span class="evicted-tokens">${item.tokens} tokens</span>
                 </div>
                 <div class="evicted-text">${escapeHtml(item.text)}</div>
             </div>`;
@@ -237,7 +237,7 @@ function renderEvictedContent(evictedData) {
                 <div class="evicted-header">
                     <span class="evicted-badge doc-badge">DROPPED</span>
                     <span class="evicted-score">SCORE: ${item.score}</span>
-                    <span class="evicted-tokens">${item.tokens} TKN</span>
+                    <span class="evicted-tokens">${item.tokens} tokens</span>
                 </div>
                 <div class="evicted-text">${escapeHtml(item.text)}</div>
                 <div class="evicted-source">SRC: ${escapeHtml(item.source || 'unknown')}</div>
@@ -378,6 +378,7 @@ function addScratchpadStep(accordion, stepData) {
     
     const lifecycleEvents = {
         'planning': { className: 'planning', title: 'Planning' },
+        'routing_decision': { className: 'routing-decision', title: 'Routing Analysis' },
         'memory_retrieval': { className: 'memory-retrieval', title: 'Memory Retrieval' },
         'context_assembly': { className: 'context-assembly', title: 'Context Assembly' },
         'document_retrieval': { className: 'document-retrieval', title: 'Document Retrieval' },
@@ -546,7 +547,7 @@ function populateSidebarFromTelemetry(telemetryData) {
             const dropped = evictionLog.filter(e => e.status === 'DROPPED');
             const summary = document.createElement('div');
             summary.className = 'eviction-summary';
-            summary.innerHTML = `<span class="eviction-kept-count">${kept.length} KEPT</span> <span class="eviction-dropped-count">${dropped.length} DROPPED</span>`;
+            summary.innerHTML = `<span class="eviction-kept-count">${kept.length} kept</span> <span class="eviction-dropped-count">${dropped.length} dropped</span>`;
             evictionWindow.appendChild(summary);
 
             evictionLog.forEach(entry => {
@@ -555,12 +556,12 @@ function populateSidebarFromTelemetry(telemetryData) {
                 item.className = `eviction-item ${isDropped ? 'eviction-dropped' : 'eviction-kept'}`;
                 item.innerHTML = `
                     <div class="eviction-header">
-                        <span class="eviction-badge ${isDropped ? 'badge-dropped' : 'badge-kept'}">${entry.status}</span>
-                        <span class="eviction-score">${entry.score !== undefined && entry.score !== null ? 'SCORE: ' + entry.score : ''}</span>
-                        <span class="eviction-tokens">${entry.tokens} TKN</span>
+                        <span class="eviction-badge ${isDropped ? 'badge-dropped' : 'badge-kept'}">${isDropped ? 'Dropped' : 'Kept'}</span>
+                        <span class="eviction-score">${entry.score !== undefined && entry.score !== null ? 'Score ' + entry.score : ''}</span>
+                        <span class="eviction-tokens">${entry.tokens} tokens</span>
                     </div>
                     <div class="eviction-text">${escapeHtml(entry.text)}</div>
-                    ${isDropped ? `<div class="eviction-reason">REASON: ${escapeHtml(entry.reason)}</div>` : ''}
+                    ${isDropped ? `<div class="eviction-reason">Reason: ${escapeHtml(entry.reason)}</div>` : ''}
                 `;
                 evictionWindow.appendChild(item);
             });
@@ -699,7 +700,7 @@ function addMsg(text, type = 'ai', telemetryData = null) {
     // Create header
     const headerDiv = document.createElement('div');
     headerDiv.className = 'msg-header';
-    headerDiv.textContent = type === 'user' ? 'USER_INPUT' : 'SYSTEM_OUTPUT';
+    headerDiv.textContent = type === 'user' ? 'You' : 'Agent';
     msg.appendChild(headerDiv);
     
     // Render scratchpad if AI turn and has agent_steps
@@ -766,13 +767,13 @@ function addMsg(text, type = 'ai', telemetryData = null) {
         telemetryFooter.innerHTML = `
             <div class="telemetry-badges">
                 <span class="badge-item ${hasOverflow ? 'recovered' : 'nominal'}">
-                    ${hasOverflow ? 'RECOVERED' : 'NOMINAL'}
+                    ${hasOverflow ? 'Recovered' : 'Normal'}
                 </span>
-                <span class="badge-item">LIMIT: ${limitVal} TKN</span>
-                <span class="badge-item">FOOTPRINT: ${finalTkn} TKN</span>
+                <span class="badge-item">Limit ${limitVal}</span>
+                <span class="badge-item">Prompt ${finalTkn}</span>
             </div>
             <button class="telemetry-inspect-btn" data-telemetry-key="${cacheKey}">
-                INSPECT
+                Inspect
             </button>
         `;
         msg.appendChild(telemetryFooter);
@@ -803,34 +804,34 @@ function renderInspector(data) {
 
     inspectorWindow.innerHTML = `
         <div class="inspector-section">
-            <div class="inspector-section-hdr">BUDGET ALLOCATION</div>
+            <div class="inspector-section-hdr">Budget</div>
             <div class="inspector-section-body">
-MEMORY OCCUPIED: ${budget.memory_tokens_used || 0} / ${budget.memory_tokens_limit || 0} TKN
-KNOWLEDGE COMPRESSED: ${budget.document_tokens_used || 0} / ${budget.document_tokens_limit || 0} TKN
+Memory: ${budget.memory_tokens_used || 0} / ${budget.memory_tokens_limit || 0}
+Knowledge: ${budget.document_tokens_used || 0} / ${budget.document_tokens_limit || 0}
             </div>
         </div>
         <div class="inspector-section">
-            <div class="inspector-section-hdr">PIPELINE TELEMETRY</div>
+            <div class="inspector-section-hdr">Pipeline</div>
             <div class="inspector-section-body">
-MODE: ${(data.stats?.mode || 'N/A').toUpperCase()}
-HYBRID ALPHA: ${data.stats?.alpha || 0.5}
-PEAK RE-RANK SCORE: ${data.stats?.reranker_peak_score || 0}
-COMPRESSION RATIO: ${((data.stats?.compression_ratio || 0) * 100).toFixed(1)}%
-EMBED GENERATION: ${latency.phase_2_embed_generation_ms || 0} ms
-WEAVIATE SEARCH: ${latency.phase_2_weaviate_search_ms || 0} ms
-HYDE GENERATION: ${latency.phase_1_5_hyde_ms || 0} ms
+Mode: ${data.stats?.mode || 'N/A'}
+Hybrid alpha: ${data.stats?.alpha || 0.5}
+Peak rerank score: ${data.stats?.reranker_peak_score || 0}
+Compression ratio: ${((data.stats?.compression_ratio || 0) * 100).toFixed(1)}%
+Embedding: ${latency.phase_2_embed_generation_ms || 0} ms
+Vector search: ${latency.phase_2_weaviate_search_ms || 0} ms
+HyDE: ${latency.phase_1_5_hyde_ms || 0} ms
             </div>
         </div>
         <div class="inspector-section">
-            <div class="inspector-section-hdr">LLM QUERY EXPANSIONS</div>
+            <div class="inspector-section-hdr">Query expansions</div>
             <div class="inspector-section-body">${data.search_queries ? data.search_queries.map(q => `> ${q}`).join('\n') : 'N/A'}</div>
         </div>
         <div class="inspector-section">
-            <div class="inspector-section-hdr">HYPOTHETICAL DOCUMENT (HyDE)</div>
+            <div class="inspector-section-hdr">HyDE document</div>
             <div class="inspector-section-body">${data.hyde_doc || 'N/A'}</div>
         </div>
         <div class="inspector-section">
-            <div class="inspector-section-hdr">RAW PROMPT INSPECTION</div>
+            <div class="inspector-section-hdr">Raw prompt</div>
             <div class="inspector-section-body" style="font-family: var(--font-mono); font-size: 0.65rem; max-height: 160px; overflow-y: auto; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.03); white-space: pre-wrap; word-break: break-all;">${escapeHtml(data.raw_prompt || 'N/A')}</div>
         </div>
     `;
@@ -847,7 +848,7 @@ form.addEventListener('submit', async (e) => {
     setSubmitReady();
     addMsg(query, 'user');
     
-    addLog(`Initiating streaming request (Mode: agentic | Limit: ${contextLimit} TKN)`, 'REQUEST');
+    addLog(`Starting agent run (mode: agentic, limit: ${contextLimit})`, 'REQUEST');
 
     // Reset/Clear UI state for query run
     reconWindow.innerHTML = '';
@@ -876,7 +877,7 @@ form.addEventListener('submit', async (e) => {
     if (overflowIndicatorDot) overflowIndicatorDot.className = 'indicator-dot nominal';
     if (overflowAlertBanner) {
         overflowAlertBanner.className = 'overflow-banner alert-nominal';
-        overflowAlertBanner.textContent = 'SYSTEM RUNNING IN NOMINAL STATE';
+        overflowAlertBanner.textContent = 'System running normally';
     }
 
     const controller = new AbortController();
@@ -887,7 +888,7 @@ form.addEventListener('submit', async (e) => {
     const aiBubble = document.createElement('div');
     aiBubble.className = 'message msg-ai';
     aiBubble.innerHTML = `
-        <div class="msg-header">SYSTEM_OUTPUT</div>
+        <div class="msg-header">Agent</div>
         <div class="scratchpad-container"></div>
         <div class="msg-body typing-cursor"></div>
     `;
@@ -945,7 +946,7 @@ form.addEventListener('submit', async (e) => {
                     continue;
                 }
 
-                const isScratchpadEvent = ["thought", "action", "observation", "planning", "memory_retrieval", "context_assembly", "document_retrieval", "web_traversal", "summarization", "inference", "synthesis"].includes(data.event);
+                const isScratchpadEvent = ["thought", "action", "observation", "planning", "routing_decision", "memory_retrieval", "context_assembly", "document_retrieval", "web_traversal", "summarization", "inference", "synthesis"].includes(data.event);
                 if (isScratchpadEvent) {
                     if (!accordion) {
                         accordion = createScratchpadAccordion(scratchpadContainer);
@@ -971,13 +972,13 @@ form.addEventListener('submit', async (e) => {
                     if (overflowIndicatorDot) overflowIndicatorDot.className = 'indicator-dot breached';
                     if (overflowAlertBanner) {
                         overflowAlertBanner.className = 'overflow-banner alert-breached';
-                        overflowAlertBanner.innerHTML = `🚨 OVERFLOW DETECTED: Prompt (${data.initial} TKN) exceeds limit (${data.limit} TKN)`;
+                        overflowAlertBanner.textContent = `Context limit exceeded: prompt ${data.initial}, limit ${data.limit}`;
                     }
                     
                     if (tokenUsedVal) tokenUsedVal.textContent = data.initial;
                     updateProgressBar(data.initial, data.limit, true);
                     
-                    addLog(`Context overflow detected! Size: ${data.initial} TKN. Limit: ${data.limit} TKN. Running recovery...`, "WARNING");
+                    addLog(`Context limit exceeded. Prompt: ${data.initial}. Limit: ${data.limit}. Running recovery...`, "WARNING");
                 }
                 else if (data.event === "overflow_step") {
                     // Stream lines to overflow debugger terminal shell
@@ -1084,13 +1085,13 @@ form.addEventListener('submit', async (e) => {
                         footerDiv.innerHTML = `
                             <div class="telemetry-badges">
                                 <span class="badge-item ${hasOverflow ? 'recovered' : 'nominal'}">
-                                    ${hasOverflow ? 'RECOVERED' : 'NOMINAL'}
+                                    ${hasOverflow ? 'Recovered' : 'Normal'}
                                 </span>
-                                <span class="badge-item">LIMIT: ${telemetry.limit} TKN</span>
-                                <span class="badge-item">FOOTPRINT: ${telemetry.final_tokens} TKN</span>
+                                <span class="badge-item">Limit ${telemetry.limit}</span>
+                                <span class="badge-item">Prompt ${telemetry.final_tokens}</span>
                             </div>
                             <button class="telemetry-inspect-btn" data-telemetry-key="${cacheKey}">
-                                INSPECT
+                                Inspect
                             </button>
                         `;
                         aiBubble.appendChild(footerDiv);
@@ -1152,7 +1153,7 @@ window.viewTelemetryDetails = function(keyOrTelemetry, budget, query) {
     if (telemetry.steps && telemetry.steps.length > 0) {
         stepsHtml = `
             <div style="margin-top: 15px;">
-                <h4 style="margin-bottom: 8px; color: var(--accent-amber);">STEP-BY-STEP RECOVERY LOGS</h4>
+                <h4 style="margin-bottom: 8px; color: var(--accent-amber);">Recovery log</h4>
                 <div class="modal-step-list">
                     ${telemetry.steps.map(step => `<div class="modal-step-item">${escapeHtml(step)}</div>`).join('')}
                 </div>
@@ -1170,7 +1171,7 @@ window.viewTelemetryDetails = function(keyOrTelemetry, budget, query) {
     if (telemetry.raw_prompt) {
         promptHtml = `
             <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
-                <h4 style="margin-bottom: 8px; color: var(--accent-cyan); font-family: var(--font-brand);">COMPILED LLM PROMPT FOOTPRINT</h4>
+                <h4 style="margin-bottom: 8px; color: var(--accent-cyan); font-family: var(--font-brand);">Prompt footprint</h4>
                 <div style="font-family: var(--font-mono); font-size: 0.65rem; max-height: 180px; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.03); padding: 8px; white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); border-radius: var(--radius-sm);">
                     ${escapeHtml(telemetry.raw_prompt)}
                 </div>
@@ -1180,36 +1181,36 @@ window.viewTelemetryDetails = function(keyOrTelemetry, budget, query) {
 
     telemetryModalBody.innerHTML = `
         <div style="margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;">
-            <span style="color: var(--text-muted); font-size: 0.65rem; text-transform: uppercase;">QUERY TEXT:</span>
+            <span style="color: var(--text-muted); font-size: 0.65rem;">Query</span>
             <div style="font-weight: 500; color: #fff; margin-top: 2px;">"${escapeHtml(query)}"</div>
         </div>
         
         <table class="modal-meta-table">
             <tr>
-                <td>OVERFLOW STATE</td>
+                <td>Overflow state</td>
                 <td style="color: ${telemetry.overflow_occurred ? 'var(--accent-amber)' : 'var(--accent-green)'}">
-                    ${telemetry.overflow_occurred ? 'RECOVERED (BREACH RESOLVED)' : 'NOMINAL (NO BREACH)'}
+                    ${telemetry.overflow_occurred ? 'Recovered' : 'Normal'}
                 </td>
             </tr>
             <tr>
-                <td>EFFECTIVE LIMIT</td>
-                <td>${telemetry.limit} TKN</td>
+                <td>Limit</td>
+                <td>${telemetry.limit}</td>
             </tr>
             <tr>
-                <td>INITIAL FOOTPRINT</td>
-                <td>${telemetry.initial_tokens} TKN</td>
+                <td>Initial prompt</td>
+                <td>${telemetry.initial_tokens}</td>
             </tr>
             <tr>
-                <td>SAFE COMPILED SIZE</td>
-                <td style="color: var(--accent-cyan)">${telemetry.final_tokens} TKN</td>
+                <td>Final prompt</td>
+                <td style="color: var(--accent-cyan)">${telemetry.final_tokens}</td>
             </tr>
             <tr>
-                <td>CONVERSATION MEMORY</td>
-                <td>${budget.memory_tokens_used || 0} TKN</td>
+                <td>Conversation memory</td>
+                <td>${budget.memory_tokens_used || 0}</td>
             </tr>
             <tr>
-                <td>COMPRESSED DOCUMENTS</td>
-                <td>${budget.document_tokens_used || 0} TKN</td>
+                <td>Compressed documents</td>
+                <td>${budget.document_tokens_used || 0}</td>
             </tr>
         </table>
         
@@ -1384,39 +1385,114 @@ async function loadHistory() {
     }
 }
 
-// ---- Sidebar Toggles ----
+// ---- Agent Workspace ----
 const toggleLeftBtn = document.getElementById('toggle-left-sidebar');
 const toggleRightBtn = document.getElementById('toggle-right-sidebar');
 const mainGrid = document.querySelector('.main-grid');
+const agentWorkbench = document.getElementById('agent-workbench');
 
-if (mainGrid) {
-    if (localStorage.getItem('rag_left_collapsed') === 'true') {
-        mainGrid.classList.add('left-collapsed');
-    }
-    if (localStorage.getItem('rag_right_collapsed') === 'true') {
-        mainGrid.classList.add('right-collapsed');
-    }
-}
-
-if (toggleLeftBtn && mainGrid) {
-    toggleLeftBtn.addEventListener('click', () => {
-        mainGrid.classList.toggle('left-collapsed');
-        localStorage.setItem('rag_left_collapsed', mainGrid.classList.contains('left-collapsed'));
-        const icon = mainGrid.classList.contains('left-collapsed') ? 
-            '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><polyline points="13 8 17 12 13 16"></polyline></svg>' : 
-            '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>';
-        toggleLeftBtn.innerHTML = icon;
+function activateWorkbenchPage(pageName) {
+    if (!agentWorkbench) return;
+    agentWorkbench.querySelectorAll('.agent-workbench-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.workbenchTab === pageName);
+    });
+    agentWorkbench.querySelectorAll('.workbench-page').forEach(page => {
+        page.classList.toggle('active', page.dataset.workbenchPage === pageName);
     });
 }
 
-if (toggleRightBtn && mainGrid) {
+function activateTraceTab(tabName) {
+    const tabButton = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+    const tabPanel = document.getElementById(`tab-${tabName}`);
+    if (!tabButton || !tabPanel) return;
+
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+    tabButton.classList.add('active');
+    tabPanel.classList.add('active');
+}
+
+function activateEvidenceTab(tabName) {
+    const tabButton = document.querySelector(`.tab-btn-right[data-tab-right="${tabName}"]`);
+    const tabPanel = document.getElementById(`tab-right-${tabName}`);
+    if (!tabButton || !tabPanel) return;
+
+    document.querySelectorAll('.tab-btn-right').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-panel-right').forEach(panel => panel.classList.remove('active'));
+    tabButton.classList.add('active');
+    tabPanel.classList.add('active');
+
+    const badge = document.getElementById(`badge-${tabName}`);
+    if (badge) badge.classList.remove('pulse');
+}
+
+function openWorkbench(target = 'trace') {
+    if (!agentWorkbench) return;
+
+    const traceTargets = new Set(['logs', 'overflow', 'inspector', 'evicted']);
+    const evidenceTargets = new Set(['knowledge', 'evictions', 'traversal']);
+
+    if (traceTargets.has(target)) {
+        activateWorkbenchPage('trace');
+        activateTraceTab(target);
+    } else if (evidenceTargets.has(target)) {
+        activateWorkbenchPage('evidence');
+        activateEvidenceTab(target);
+    } else {
+        activateWorkbenchPage(target);
+    }
+
+    agentWorkbench.classList.add('open');
+    agentWorkbench.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('workbench-open');
+}
+
+function closeWorkbench() {
+    if (!agentWorkbench) return;
+    agentWorkbench.classList.remove('open');
+    agentWorkbench.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('workbench-open');
+}
+
+document.querySelectorAll('[data-workbench-open]').forEach(btn => {
+    btn.addEventListener('click', () => openWorkbench(btn.dataset.workbenchOpen || 'trace'));
+});
+
+document.querySelectorAll('[data-workbench-close]').forEach(btn => {
+    btn.addEventListener('click', closeWorkbench);
+});
+
+document.querySelectorAll('.agent-workbench-tab').forEach(btn => {
+    btn.addEventListener('click', () => activateWorkbenchPage(btn.dataset.workbenchTab || 'trace'));
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && agentWorkbench && agentWorkbench.classList.contains('open')) {
+        closeWorkbench();
+    }
+});
+
+if (toggleLeftBtn) {
+    toggleLeftBtn.addEventListener('click', () => {
+        const isTraceOpen = agentWorkbench && agentWorkbench.classList.contains('open') &&
+                            agentWorkbench.querySelector('.agent-workbench-tab[data-workbench-tab="trace"]').classList.contains('active');
+        if (isTraceOpen) {
+            closeWorkbench();
+        } else {
+            openWorkbench('logs');
+        }
+    });
+}
+
+if (toggleRightBtn) {
     toggleRightBtn.addEventListener('click', () => {
-        mainGrid.classList.toggle('right-collapsed');
-        localStorage.setItem('rag_right_collapsed', mainGrid.classList.contains('right-collapsed'));
-        const icon = mainGrid.classList.contains('right-collapsed') ? 
-            '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line><polyline points="11 8 7 12 11 16"></polyline></svg>' : 
-            '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>';
-        toggleRightBtn.innerHTML = icon;
+        const isEvidenceOpen = agentWorkbench && agentWorkbench.classList.contains('open') &&
+                               agentWorkbench.querySelector('.agent-workbench-tab[data-workbench-tab="evidence"]').classList.contains('active');
+        if (isEvidenceOpen) {
+            closeWorkbench();
+        } else {
+            openWorkbench('knowledge');
+        }
     });
 }
 

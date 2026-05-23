@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 
 from core.config import CHUNK_SIZE, CHUNK_OVERLAP
 from core.retriever import WeaviateRetriever
-from core.engine import RAGContextEngine
+from core.engine import AgenticSystem
 from core.splitter import RecursiveCharacterSplitter
 
 # Load environment variables
@@ -77,10 +77,10 @@ async def lifespan(app: FastAPI):
     """
     global rag, retriever
     try:
-        logger.info("Starting Modular RAG Context Engine...")
+        logger.info("Starting Agentic System...")
         retriever = WeaviateRetriever()
-        rag = RAGContextEngine(retriever)
-        logger.info("RAG Engine successfully initialized.")
+        rag = AgenticSystem(retriever)
+        logger.info("Agentic System successfully initialized.")
         yield
     except Exception as e:
         logger.error(f"Critical error during startup: {e}")
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         if rag:
-            logger.info("Shutting down RAG Engine...")
+            logger.info("Shutting down Agentic System...")
             rag.close()
 
 
@@ -194,7 +194,15 @@ async def query_rag_stream(request: QueryRequest):
                     loop.call_soon_threadsafe(queue.put_nowait, None)
 
             queue = asyncio.Queue()
-            loop.run_in_executor(None, run_sync_gen, queue)
+            fut = loop.run_in_executor(None, run_sync_gen, queue)
+
+            def _on_bg_done(f):
+                try:
+                    f.result()
+                except Exception as bg_err:
+                    logger.error(f"Background stream thread failed: {bg_err}", exc_info=True)
+
+            fut.add_done_callback(_on_bg_done)
 
             while True:
                 event = await queue.get()
@@ -222,22 +230,99 @@ async def upload_document(file: UploadFile = File(...)):
     if not rag:
         raise HTTPException(status_code=500, detail="Engine not ready")
     try:
-        filename = file.filename
+        filename = os.path.basename(file.filename)  # sanitize against path traversal
         logger.info(f"Processing upload for: {filename}")
 
-        content = ""
-        if filename.endswith(".txt"):
-            content = (await file.read()).decode("utf-8")
-        elif filename.endswith(".pdf"):
-            pdf_data = await file.read()
-            pdf_reader = PdfReader(io.BytesIO(pdf_data))
-            for page in pdf_reader.pages:
-                content += page.extract_text() + "\n"
+        # Enforce 10MB limit and validate magic bytes using chunked read
+        max_size = 10 * 1024 * 1024  # 10MB
+        magic_size = 8192  # 8KB
+        
+        # Read the first chunk for magic bytes validation
+        first_chunk = await file.read(magic_size)
+        if not first_chunk:
+            raise HTTPException(status_code=400, detail="File content is empty.")
+        
+        total_read = len(first_chunk)
+        
+        # Identify file type based on magic bytes
+        is_pdf = first_chunk.startswith(b"%PDF")
+        is_txt = False
+        
+        if not is_pdf:
+            # Check for null bytes to verify it's not binary
+            if b"\x00" not in first_chunk:
+                # Try to decode the first chunk as UTF-8
+                try:
+                    first_chunk.decode("utf-8")
+                    is_txt = True
+                except UnicodeDecodeError:
+                    # It might be UTF-8 but cut in the middle of a multi-byte char
+                    try:
+                        for i in range(4):
+                            try:
+                                (first_chunk[:len(first_chunk)-i] if i > 0 else first_chunk).decode("utf-8")
+                                is_txt = True
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                    except Exception:
+                        pass
+        
+        # Validate that we matched at least one allowed type
+        if is_pdf:
+            logger.info(f"Magic bytes verified: PDF file detected for {filename}")
+        elif is_txt:
+            logger.info(f"Magic bytes verified: Plain text file detected for {filename}")
         else:
-            raise HTTPException(status_code=400, detail="Unsupported file type.")
+            raise HTTPException(
+                status_code=400, 
+                detail="Unsupported or invalid file format. Only valid PDF and UTF-8 TXT files are allowed."
+            )
+
+        # Read the rest of the file in chunks
+        chunks_data = [first_chunk]
+        chunk_size = 1024 * 1024  # 1MB chunks
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_read += len(chunk)
+            if total_read > max_size:
+                raise HTTPException(
+                    status_code=400,
+                    detail="File too large. Maximum allowed size is 10MB."
+                )
+            chunks_data.append(chunk)
+
+        file_bytes = b"".join(chunks_data)
+
+        # Extract text based on detected file type
+        content = ""
+        if is_pdf:
+            try:
+                pdf_reader = PdfReader(io.BytesIO(file_bytes))
+                for page in pdf_reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        content += page_text + "\n"
+            except Exception as pdf_err:
+                logger.error(f"Failed to parse PDF file content: {pdf_err}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to parse PDF file content. The file may be corrupt."
+                )
+        else:  # is_txt
+            try:
+                content = file_bytes.decode("utf-8")
+            except UnicodeDecodeError as txt_err:
+                logger.error(f"Failed to decode text file as UTF-8: {txt_err}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to decode file as UTF-8 text."
+                )
 
         if not content.strip():
-            raise HTTPException(status_code=400, detail="File content is empty.")
+            raise HTTPException(status_code=400, detail="File content is empty or contains no extractable text.")
 
         splitter = RecursiveCharacterSplitter(chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
         chunks = splitter.split_text(content)
@@ -246,6 +331,8 @@ async def upload_document(file: UploadFile = File(...)):
         await asyncio.to_thread(retriever.add_documents, chunks, source=filename)
 
         return {"status": "success", "message": f"Indexed {len(chunks)} chunks from {filename}"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error during upload: {e}")
         raise HTTPException(status_code=500, detail=str(e))
