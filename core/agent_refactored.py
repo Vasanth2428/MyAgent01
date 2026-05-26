@@ -24,6 +24,8 @@ from typing import Dict, Generator, Optional, List, Tuple, Any
 from dataclasses import dataclass
 import tiktoken
 
+import requests
+
 from core.config import (
     TOKENIZER_ENCODING, COST_PER_INPUT_TOKEN, COST_PER_OUTPUT_TOKEN, AGENT_CONFIG
 )
@@ -378,7 +380,16 @@ class RAGAgent:
         Raises:
             ToolTimeoutError, ToolExecutionError, LLMCallError
         """
-        timeout = AGENT_CONFIG["tool_timeouts"].get(tool_name, 30)
+        # Resolve timeout
+        timeout = AGENT_CONFIG["tool_timeouts"].get(tool_name)
+        if timeout is None:
+            tool_def = self.tool_registry.get_tool(tool_name)
+            if tool_def:
+                timeout = AGENT_CONFIG["tool_timeouts"].get(tool_def.tool_type.value)
+                if timeout is None:
+                    timeout = tool_def.timeout_seconds
+        if timeout is None:
+            timeout = 30
         
         try:
             if tool_name == "search_knowledge_base":
@@ -389,7 +400,7 @@ class RAGAgent:
                 return result or "No matching documents found."
             
             elif tool_name == "web_search":
-                results = search_web(tool_arg)
+                results = search_web(tool_arg, timeout=timeout)
                 self._last_web_step = {
                     "type": "search",
                     "query": tool_arg,
@@ -403,8 +414,8 @@ class RAGAgent:
                 return "\n".join(obs_list)
             
             elif tool_name == "web_fetch":
-                text_content, links = fetch_web_page(tool_arg)
-                if text_content.startswith("Error"):
+                text_content, links = fetch_web_page(tool_arg, timeout=timeout)
+                if isinstance(text_content, str) and text_content.startswith("Error"):
                     self._last_web_step = {
                         "type": "fetch",
                         "url": tool_arg,
@@ -449,7 +460,7 @@ class RAGAgent:
             else:
                 raise ToolExecutionError(tool_name, f"Unknown tool: {tool_name}")
         
-        except TimeoutError as e:
+        except (TimeoutError, requests.exceptions.Timeout) as e:
             raise ToolTimeoutError(tool_name, timeout)
         except Exception as e:
             raise ToolExecutionError(tool_name, str(e), original_error=e)
@@ -602,10 +613,10 @@ Available local knowledge base sources (contains {len(sources)} unique files, to
 {", ".join(sources) if sources else "None (No documents uploaded yet)"}
 
 You must route the query to one of the following strategies:
-1. "DIRECT": Use this if the query is conversational (greetings, small talk), asks about conversation history, can be answered directly using internal LLM knowledge, or if no tools/searches are needed at all.
-2. "KNOWLEDGE_BASE": Use this if the query relates strictly to the available local knowledge base files or uploaded documents.
+1. "DIRECT": Use this ONLY if the query is simple chit-chat, a greeting, or asks strictly about previous conversation history (e.g., "what was the last thing I said?"). DO NOT select DIRECT if the query is asking for factual, database, system stats, math, or file-specific information, even if you think you have pre-trained knowledge to answer it.
+2. "KNOWLEDGE_BASE": Use this if the query asks about data, concepts, documents, database records, sales, networking, or any topics that might be covered in the available local files.
 3. "WEB": Use this if the query requires up-to-date live information, public facts, news, time-sensitive data, or anything not covered in the local knowledge base.
-4. "HYBRID": Use this if the query requires cross-referencing information between the local knowledge base and the live web, or if there is ambiguity.
+4. "HYBRID": Use this if the query requires cross-referencing information between local files and the live web, or if there is ambiguity.
 
 You MUST respond with a valid raw JSON object. Do not include markdown code block formatting (like ```json ... ```).
 Response format:
@@ -702,7 +713,7 @@ User Query: {query}
                         delta = chunk.choices[0].delta.content or ""
                         if delta:
                             direct_reply += delta
-                            yield {"event": "answer_chunk", "text": direct_reply}
+                            yield {"event": "answer_chunk", "text": delta}
                 except Exception as e:
                     logger.error(f"Error streaming direct response: {e}")
                     direct_reply = "I encountered an error while formulating my direct response."
@@ -712,13 +723,14 @@ User Query: {query}
             self.engine.save_memory(session_id, query, "user")
             
             # Telemetry for Direct Route
+            prompt_tkn = count_tokens(query) if is_greeting else (count_tokens("You are a helpful assistant.") + count_tokens(direct_prompt))
             telemetry_data = {
                 "query": query,
                 "raw_prompt": query if is_greeting else direct_prompt,
                 "overflow_occurred": False,
                 "limit": context_limit,
-                "initial_tokens": count_tokens(query),
-                "final_tokens": count_tokens(query),
+                "initial_tokens": prompt_tkn,
+                "final_tokens": prompt_tkn,
                 "steps": [],
                 "agent_steps": agent_steps,
                 "budget_tracking": {
@@ -751,8 +763,8 @@ User Query: {query}
                     "overflow_telemetry": {
                         "overflow_occurred": False,
                         "limit": context_limit,
-                        "initial_tokens": count_tokens(query),
-                        "final_tokens": count_tokens(query),
+                        "initial_tokens": prompt_tkn,
+                        "final_tokens": prompt_tkn,
                         "steps": []
                     },
                     "budget_tracking": {
@@ -979,6 +991,9 @@ User Query: {query}
 
             elif final_answer_match:
                 final_response = final_answer_match.group(1).strip()
+                break
+            elif is_direct_answer:
+                final_response = response.strip()
                 break
             else:
                 if iteration < self.max_iterations:

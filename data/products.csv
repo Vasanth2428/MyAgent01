@@ -1,0 +1,121 @@
+product_id,product_name,category,unit_price,supplier,stock_quantity
+1,Ferguson Ltd Laptop,Electronics,46213.74,Salazar-Boyd,49
+2,Johnson LLC Headphones,Electronics,56747.46,Walker Group,214
+3,Rogers Ltd Headphones,Electronics,110255.0,Harper-Willis,368
+4,"Ruiz, Dorsey and Turner Tablet",Electronics,98554.1,Anderson-Smith,902
+5,Faulkner and Sons Phone,Electronics,27139.36,Carrillo-Foster,685
+6,Manning-Mitchell Phone,Electronics,48116.68,Dillon and Sons,295
+7,Lee Ltd Headphones,Electronics,8795.78,"Johnson, Reyes and Garcia",801
+8,Smith LLC Tablet,Electronics,42461.96,Griffith LLC,531
+9,Davis LLC Monitor,Electronics,81702.42,Taylor Ltd,873
+10,Williams Inc Keyboard,Electronics,40072.41,Schroeder LLC,38
+11,Sanders Group Laptop,Electronics,105306.09,Moreno-Potter,277
+12,Burton PLC Phone,Electronics,69880.47,"Maxwell, Ochoa and Peterson",281
+13,Hoffman and Sons Laptop,Electronics,13454.1,Mcbride Ltd,454
+14,Taylor and Sons Tablet,Electronics,87561.13,Byrd and Sons,331
+15,Roberts Ltd Monitor,Electronics,72941.96,Simon LLC,533
+16,Brooks-Stone Laptop,Electronics,46530.85,Ramirez Ltd,600
+17,Fisher-Newman Phone,Electronics,30939.34,Baker-Aguilar,735
+18,Nguyen-Mckinney Monitor,Electronics,702.11,Armstrong-Evans,957
+19,Whitaker-Campbell Headphones,Electronics,64845.01,"Stafford, Maxwell and Rodgers",746
+20,Fowler-Johnson Mouse,Electronics,88576.0,"Soto, Potter and Macias",211
+21,James PLC Tablet,Electronics,52040.04,Stone LLC,981
+22,"James, Miller and Johnson Mouse",Electronics,110532.12,Davis-Smith,648
+23,Carr-Burton Tablet,Electronics,79774.8,"Stephens, Hughes and Bryant",137
+24,Nelson-Jensen Mouse,Electronics,108055.6,Ayala Ltd,529
+25,Burns-Hoffman Vacuum Cleaner,Home Appliances,80193.7,Obrien-Turner,344
+26,Morris-Griffin Air Purifier,Home Appliances,83816.41,Smith LLC,577
+27,"Miller, Lee and Roy Microwave",Home Appliances,23424.89,"Mcintyre, Scott and Hopkins",690
+28,Castillo-House Air Purifier,Home Appliances,81439.49,Pierce and Sons,934
+29,Thomas-Wilkinson Microwave,Home Appliances,74054.03,Ortiz Ltd,318
+30,Lee PLC Air Purifier,Home Appliances,65978.5,"Campbell, Murray and Cole",10
+31,Richardson-Baker Vacuum Cleaner,Home Appliances,34786.19,Johnson-Chaney,450
+32,Ward Group Fan,Home Appliances,72996.06,"Edwards, Allison and Finley",339
+33,Hart LLC Air Purifier,Home Appliances,53293.43,Foster-Jones,701
+34,"Miller, Price and Dean Microwave",Home Appliances,61585.29,Mendoza Inc,822
+35,Smith-Gibbs Microwave,Home Appliances,79232.66,"Grant, Harvey and Perry",300
+36,Patel-Gonzalez Fan,Home Appliances,79830.53,Wilkinson-Vargas,644
+37,"Allen, Johnson and Flores Vacuum Cleaner",Home Appliances,11659.77,Floyd and Sons,984
+38,Mullen-Foster Microwave,Home Appliances,80899.08,"Miller, Perez and Smith",240
+39,Walker Ltd Microwave,Home Appliances,18108.8,Scott-Flores,57
+40,"Jackson, Lopez and Smith Microwave",Home Appliances,118080.35,Lowery Inc,635
+41,"Walker, Scott and Rose Mixer",Home Appliances,54922.23,Todd-Franklin,917
+42,Cook-Kim Fan,Home Appliances,23735.01,"Avila, Mcdaniel and Watson",723
+43,"Hernandez, Wilson and Pennington Air Purifier",Home Appliances,59578.07,Sanchez Ltd,259
+44,Johnson-Costa Microwave,Home Appliances,78898.93,Bishop-Rios,15
+45,Merritt Inc Mixer,Home Appliances,93521.24,Castillo-Armstrong,234
+46,Garcia-Evans Microwave,Home Appliances,96591.13,Weber Ltd,722
+47,"Williams, Freeman and Clark Fan",Home Appliances,56013.71,"Mayer, Coleman and Wiggins",580
+48,Simmons PLC Microwave,Home Appliances,110137.67,"Hamilton, Higgins and Becker",134
+49,Villa Inc Bookshelf,Furniture,16434.02,Burns-Miller,485
+50,Lambert Group Dining Table,Furniture,118553.15,Wilson and Sons,619
+51,Watson and Sons Sofa,Furniture,114029.73,"Carney, Vaughn and Zimmerman",922
+52,"Mitchell, Whitney and Johnson Bookshelf",Furniture,73711.95,Hawkins-Hernandez,746
+53,"Rivera, Pope and Snyder Dining Table",Furniture,51495.52,"Ruiz, Hayes and Taylor",938
+54,"Boyd, Gray and Scott Dining Table",Furniture,53786.68,"Bullock, Hayes and Quinn",172
+55,"Parker, Hensley and Branch Bookshelf",Furniture,54283.34,Arnold-Farmer,779
+56,"Lynn, Robinson and Richards Chair",Furniture,100863.62,Summers-Taylor,293
+57,"Curry, Nelson and Reynolds Dining Table",Furniture,58409.34,Martinez LLC,254
+58,Lee-Ramirez Sofa,Furniture,53064.77,Gonzalez Inc,740
+59,"Jackson, Baldwin and Parks Sofa",Furniture,28521.98,"Mcdonald, Hogan and Marquez",353
+60,"Long, Hill and Clark Sofa",Furniture,107216.71,Banks-Bell,92
+61,Williams Group Chair,Furniture,18524.26,Carpenter-Jackson,402
+62,Christensen Group Chair,Furniture,84917.09,Ford LLC,75
+63,"Wilkins, Sanders and Payne Bookshelf",Furniture,49208.12,"Matthews, Cannon and Peterson",565
+64,Sanchez-Carter Bookshelf,Furniture,50185.02,"Hogan, Abbott and Singleton",221
+65,"Jones, Oconnor and Smith Bookshelf",Furniture,47042.48,Reid-Ingram,798
+66,Morrison-Sanchez Dining Table,Furniture,113554.41,"Anderson, Kelly and Larson",30
+67,Morris-Poole Dining Table,Furniture,45955.53,Ross-Simpson,16
+68,Powell-Downs Sofa,Furniture,36184.21,"Mason, Alvarado and Washington",409
+69,Smith PLC Bookshelf,Furniture,64817.36,Alvarez-Gibson,762
+70,Keller-Banks Dining Table,Furniture,96084.25,Harris and Sons,929
+71,"Small, Colon and Garcia Chair",Furniture,58843.42,Gonzalez Ltd,289
+72,Mckee-Johnson Bookshelf,Furniture,58534.22,"Smith, Rivera and Carlson",408
+73,Jenkins-Wilson T-Shirt,Fashion,80430.4,Carter Group,827
+74,Becker and Sons Jeans,Fashion,87039.67,Lee-Wilson,870
+75,Casey Inc Jeans,Fashion,110385.22,Walker-Chambers,647
+76,"Wallace, Snow and Conner Watch",Fashion,3722.49,Cole-Fitzgerald,413
+77,Rivas and Sons Watch,Fashion,67944.84,"Chambers, Hall and Knight",37
+78,Burns-Stewart Jacket,Fashion,77308.58,"Cooper, Coleman and Hawkins",148
+79,"Colon, Mckinney and Phillips Jeans",Fashion,22216.62,Smith Ltd,276
+80,Freeman-Bass Jeans,Fashion,39618.64,Roy-Ross,475
+81,"Combs, Patterson and Fernandez T-Shirt",Fashion,40831.32,"Sanchez, Pratt and Bender",910
+82,Jefferson LLC Jeans,Fashion,33751.67,Barton PLC,984
+83,Stuart-Robbins Jeans,Fashion,30646.45,Howard-Griffin,93
+84,"Richardson, Fisher and Fitzgerald Jeans",Fashion,2816.3,Mendoza Group,562
+85,Duarte and Sons Jacket,Fashion,119988.99,Lyons and Sons,368
+86,"Petty, Hamilton and Mueller Sneakers",Fashion,78192.22,"Hernandez, York and Armstrong",809
+87,Graham-Black Jacket,Fashion,90630.87,Zimmerman LLC,982
+88,Washington-Lopez Sneakers,Fashion,24323.6,Carroll-Robbins,30
+89,Hale Inc Watch,Fashion,18709.69,"Odom, Dixon and Sandoval",139
+90,Reynolds-Phillips Jeans,Fashion,80500.33,"Hanna, Schneider and Porter",587
+91,"Taylor, Gross and Owens Sneakers",Fashion,56071.56,"Farmer, Mcclain and Brady",272
+92,Miller-White T-Shirt,Fashion,20550.8,Garrett and Sons,631
+93,Wilson-Clark Jacket,Fashion,93446.13,Fritz Inc,177
+94,"Harris, Drake and Mcdonald T-Shirt",Fashion,13417.8,Porter-Gillespie,36
+95,Williamson-Brown T-Shirt,Fashion,69307.71,Ward-Meza,939
+96,Brown Group Jeans,Fashion,47900.21,"Peterson, Becker and Lindsey",742
+97,"Ramirez, Reid and Morse Yoga Mat",Fitness,9581.58,"Miller, Anderson and Reyes",717
+98,"Sheppard, Briggs and Chapman Yoga Mat",Fitness,12677.21,"Simpson, Molina and Tanner",801
+99,Middleton LLC Treadmill,Fitness,102110.04,Johnson LLC,624
+100,"Johns, Roberson and Lopez Dumbbell",Fitness,95649.15,Pena-Stone,589
+101,"Rivera, Reyes and Chen Dumbbell",Fitness,41990.85,Greene Ltd,448
+102,Novak Group Treadmill,Fitness,8740.33,"Armstrong, Mendoza and James",673
+103,Curtis-Franklin Treadmill,Fitness,2011.93,"Owens, Dougherty and Peterson",440
+104,Vasquez-Morales Protein Shaker,Fitness,13111.9,Gomez-Hawkins,993
+105,Blevins-Green Treadmill,Fitness,76452.42,Smith PLC,858
+106,Lopez Ltd Protein Shaker,Fitness,85023.38,"Krueger, Jackson and Ward",455
+107,Smith PLC Yoga Mat,Fitness,88188.54,Richards Inc,998
+108,"Brooks, Moore and Vazquez Treadmill",Fitness,74101.53,Ramos-Nichols,951
+109,"Shea, Day and Ross Resistance Band",Fitness,93069.65,"Ingram, Ellis and Hodge",486
+110,Patterson-Weber Protein Shaker,Fitness,99175.28,Richardson Group,616
+111,"Davis, White and Miller Treadmill",Fitness,39015.4,Ramos-Flores,261
+112,Melendez-Ray Dumbbell,Fitness,33831.93,"Hanson, Best and White",471
+113,Booth and Sons Yoga Mat,Fitness,90181.92,"Werner, Holder and Rivera",593
+114,Fernandez-Walker Resistance Band,Fitness,80348.52,Wong-Garza,354
+115,"Marks, Burke and Mann Dumbbell",Fitness,59569.63,Roth-Cruz,342
+116,"Logan, Morton and Bradley Yoga Mat",Fitness,58762.22,Harris Group,373
+117,Dickson Ltd Treadmill,Fitness,41170.49,Beasley Inc,911
+118,Schroeder-Flores Resistance Band,Fitness,84291.46,"Mills, Fletcher and Suarez",292
+119,Hughes Group Resistance Band,Fitness,1713.06,Davis PLC,980
+120,Archer Inc Yoga Mat,Fitness,10730.75,"Beard, Walker and Hardin",747

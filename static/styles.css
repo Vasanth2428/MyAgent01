@@ -196,6 +196,13 @@ header {
     outline: none;
 }
 
+.panel-toggle-btn.active {
+    background: rgba(138, 180, 248, 0.15) !important;
+    border-color: var(--accent-blue) !important;
+    color: var(--accent-blue) !important;
+    box-shadow: 0 0 6px rgba(138, 180, 248, 0.2) !important;
+}
+
 /* Columns container */
 .sidebar-left, .sidebar-right {
     display: flex;
@@ -3602,6 +3609,66 @@ textarea#comm-input {
 }
 .routing-decision .scratchpad-step-title {
     color: var(--accent-amber);
+}
+
+/* Collapsible Thought Container for separated thoughts inside AI response */
+.thought-container {
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-left: 3px solid var(--accent-indigo) !important;
+    background: rgba(99, 102, 241, 0.03) !important;
+    border-radius: 4px 12px 12px 4px !important;
+    margin: 0.8rem 0 1.2rem 0 !important;
+    overflow: hidden !important;
+    width: 100% !important;
+    max-width: 800px !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+    transition: border-color var(--transition-fast) ease, box-shadow var(--transition-fast) ease !important;
+}
+
+.thought-container:hover {
+    border-color: rgba(99, 102, 241, 0.25) !important;
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.05) !important;
+}
+
+.thought-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 0.65rem 1rem !important;
+    background: rgba(255, 255, 255, 0.01) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    color: var(--text-secondary) !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    transition: background-color var(--transition-fast) ease, color var(--transition-fast) ease !important;
+}
+
+.thought-header:hover {
+    background: rgba(255, 255, 255, 0.03) !important;
+    color: var(--text-primary) !important;
+}
+
+.thought-body {
+    padding: 0.9rem 1.2rem !important;
+    font-size: 0.82rem !important;
+    color: var(--text-secondary) !important;
+    font-style: italic !important;
+    line-height: 1.6 !important;
+    background: rgba(0, 0, 0, 0.12) !important;
+}
+
+.thought-chevron {
+    transition: transform var(--transition-fast) cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.thought-container.collapsed .thought-body {
+    display: none !important;
+}
+
+.thought-container.collapsed .thought-chevron {
+    transform: rotate(-90deg) !important;
 }
 
 

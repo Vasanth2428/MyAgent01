@@ -411,7 +411,6 @@ The instruction `"Answer ONLY using the provided context"` is critical — it pr
 ├── .gitignore           # Prevents secrets, DB, and build artifacts from Git tracking
 ├── requirements.txt     # Python dependency manifest
 ├── memory.db            # SQLite database — conversation history (auto-created)
-├── rag_explanation.md   # This document
 │
 ├── core/                # Python package — modularized backend components
 │   ├── __init__.py      # Package marker and public API exports (__all__)
@@ -426,6 +425,26 @@ The instruction `"Answer ONLY using the provided context"` is critical — it pr
 │   ├── persistence.py   # Long-term SQLite history storage manager
 │   ├── splitter.py      # Recursive, boundary-aware text splitter
 │   └── processor.py     # Legacy compatibility shim (re-exports)
+│
+├── data/                # Raw datasets and database files
+│   ├── customers.csv    # Raw customer metrics dataset (500 entries)
+│   ├── products.csv     # Raw product inventory dataset (120 entries)
+│   ├── orders.csv       # Raw transaction orders dataset (5,000 entries)
+│   ├── order_items.csv  # Raw transaction items dataset (14,939 entries)
+│   └── synthetic_sales.db # SQLite database containing pre-loaded tables
+│
+├── docs/                # Project documentation, guides, and reports
+│   ├── Architecture diagram.png
+│   ├── architecture.md      # Dynamic routing and subsystems architecture guide
+│   ├── pre_development_design.md # Product specifications and system design blueprint
+│   ├── rag_explanation.md   # This document
+│   └── subsystems_report.md
+│
+├── scratch/             # Developer scratchpad and helper utility scripts
+│   ├── load_csv_data.py # Ingestion tool to load raw CSV data files into Weaviate
+│   ├── load_data_folder.py # Old ingestion tool for loading SQLite tables into Weaviate
+│   ├── check_weaviate.py # Verification script to inspect remote Weaviate connection
+│   └── weaviate_count.py # Lightweight check script to query database count directly
 │
 ├── static/              # Decoupled frontend static assets
 │   ├── styles.css       # Controls dashboard style and CSS variables
@@ -450,61 +469,69 @@ When you drop a PDF or TXT file into the dashboard:
 
 ## 7\. How Questions Are Answered (Query Flow)
 
-A complete end-to-end example:
+A complete end-to-end example using the retrieval-first architecture:
 
 **User asks:** `"What were the test results for the new authentication module?"`
 
-Phase
+### Stage 1: Router Decision (Pre-LLM)
 
-What Happens
+The orchestrator determines the pipeline BEFORE any LLM involvement:
 
-Time
+```
+Query → Router → Pipeline Selection
+"test results" → STRICT_RAG → Retrieval is MANDATORY
+```
 
-**1\. Expansion**
+The router analyzes query keywords:
+- Private/enterprise indicators (`test`, `results`, `module`) → STRICT_RAG
+- Requires retrieval: **True**
+- Confidence: 0.9
 
-LLM generates: “Authentication module test outcomes,” “QA results for login system,” “Verification report for auth component”
+### Stage 2: Retrieval-as-Infrastructure
 
-~800ms
+Retrieval happens as infrastructure, NOT as an LLM tool choice. The LLM cannot skip or bypass this:
 
-**1.5. HyDE**
+| Phase | What Happens | Time |
+|-------|-------------|------|
+| **Expansion** | LLM generates: "Authentication module test outcomes," "QA results for login system," "Verification report for auth component" | ~800ms |
+| **HyDE** | LLM writes: "The authentication module test results showed a 98% pass rate across unit tests, with 2 edge cases…" | ~600ms |
+| **Retrieval** | 4 queries × hybrid search → 10 unique document chunks found | ~400ms |
+| **Reranking** | Cross-Encoder scores all 10 chunks, selects top 3, calculates confidence score | ~150ms |
+| **Confidence Scoring** | Peak reranker score: 0.85 → Confidence: 0.85 (high) | ~1ms |
 
-LLM writes: “The authentication module test results showed a 98% pass rate across unit tests, with 2 edge cases…”
+### Stage 3: Grounded Generation
 
-~600ms
+The LLM synthesizes an answer from the pre-retrieved context. The prompt includes uncertainty messaging based on confidence:
 
-**2\. Retrieval**
+```
+### RETRIEVED EVIDENCE:
+[Top 3 reranked documents compressed to fit token budget]
 
-4 queries × hybrid search → 10 unique document chunks found
+### QUESTION:
+What were the test results for the new authentication module?
 
-~400ms
+### ANSWER:
+Based on the test results document...
+```
 
-**3\. Reranking**
+**Total: ~2.5s**
 
-Cross-Encoder scores all 10 chunks, selects top 5
+### Pipeline Types
 
-~150ms
+| Pipeline | When Used | Retrieval Required | Tools Available |
+|----------|-----------|-------------------|-----------------|
+| **STRICT_RAG** | Private/enterprise queries | Mandatory | None (retrieval is infrastructure) |
+| **WEB_AGENT** | Current/live data queries | No | web_search, web_fetch, calculate_math, get_current_time, get_system_stats |
+| **HYBRID** | Ambiguous queries | Yes | Same as WEB_AGENT |
+| **CHAT** | Greetings, casual conversation | No | None |
 
-**4\. Memory**
+### Confidence-Based Response Messaging
 
-Retrieves last 3 conversation turns (within 300-token budget)
+The system explicitly acknowledges uncertainty when evidence is weak:
 
-~1ms
-
-**5\. Compression**
-
-5 chunks (2,400 tokens) compressed to fit 1,200-token knowledge budget
-
-~5ms
-
-**6\. Generation**
-
-Prompt sent to Groq → answer generated
-
-~500ms
-
-**Total**
-
-**~2.5s**
+- **Confidence < 0.3**: "The knowledge base does not contain this information" warning added to prompt
+- **Confidence 0.3-0.5**: "Answer with appropriate uncertainty indicators" instruction added
+- **Confidence >= 0.5**: Standard grounded generation prompt
 
 * * *
 
@@ -729,10 +756,12 @@ Runs the full retrieval + generation pipeline.
 }
 ```
 
-*   `mode`: `"context_engine"` (full pipeline) or `"normal"` (simple search + generate)
+*   `mode`: `"context_engine"` (full pipeline with retrieval-first architecture) or `"normal"` (simple search + generate)
 *   `source_filter`: Optional filename to restrict search to a single document
 
-**Response includes:** `query`, `response`, `mode`, `search_queries`, `hyde_doc`, `tps`, `query_cost`, `retrieved_context`, `compressed_context`, `memory_context`, `raw_prompt`, `stats` (with full telemetry)
+The router automatically determines the execution pipeline (STRICT_RAG, WEB_AGENT, HYBRID, or CHAT) before any LLM involvement. In STRICT_RAG mode, retrieval happens as infrastructure and cannot be bypassed by the agent.
+
+**Response includes:** `query`, `response`, `mode`, `search_queries`, `hyde_doc`, `tps`, `query_cost`, `retrieved_context`, `compressed_context`, `memory_context`, `raw_prompt`, `stats` (with full telemetry including routing and confidence scores)
 
 ### POST `/upload`
 
@@ -764,88 +793,68 @@ All conversation logs and metrics are backed by SQLite. Under the hood, database
 ## 13\. Performance Optimizations
 
 Optimization
-
 Where
-
 Impact
 
 **Smart Skip**
-
 Phase 1
-
 Short queries (<5 words) skip expansion, saving ~1s
 
 **Candidate Cap (12)**
-
 Phase 2
-
 Prevents reranking from processing hundreds of results
 
 **Fast Path Compression**
-
 Phase 5
-
 If text already fits budget, skip sentence splitting entirely
 
 **Batch Embedding**
-
 Upload
-
 All chunks embedded in one GPU/CPU pass instead of one-by-one
 
 **asyncio.to\_thread**
-
 [main.py](http://main.py)
-
 CPU-heavy ML work runs in thread pool, keeping the API responsive
 
 **Deterministic UUIDs**
-
 Upload
-
 Same text → same UUID → no duplicate entries in Weaviate
 
 **127.0.0.1 (not localhost)**
-
 Frontend
-
 Avoids DNS resolution delay on some systems
 
 **SQLite WAL Mode**
-
 Persistence
-
 Decouples read/write processes, allowing parallel reads without locking blocks.
 
 **SQLite Transaction Retries**
-
 Persistence
-
 Implements exponential backoff + jitter to resolve concurrent DB lock contentions.
 
 **Weaviate Connection Retries**
-
 Retriever
-
 Handshakes Weaviate Cloud up to 3 times on startup to handle cold starts.
 
 **Weaviate Operation Retries**
-
 Retriever
-
 Retries transient timeouts, rate limits, and network glitches with backoff & jitter.
 
 **Tolerant ReAct Parsing**
-
 Agent
-
 Flexibly parses quotes, brackets, and extra spaces in actions, preventing parsing crashes.
 
 **ReAct loop self-correction**
-
 Agent
-
 Feeds formatting errors back into LLM context dynamically to auto-recover without aborting.
+
+**Router Pre-selection**
+agent.py
+Pipeline determined before LLM, eliminating tool-choice overhead
+
+**Retrieval-as-Infrastructure**
+router.py
+Mandatory retrieval in STRICT_RAG pipeline, no LLM bypass possible
 
 * * *
 

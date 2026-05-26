@@ -53,6 +53,49 @@ let sid = localStorage.getItem('station_sid') || 'SID-' + Math.random().toString
 localStorage.setItem('station_sid', sid);
 sessionTag.textContent = `SID: ${sid}`;
 
+let apiKey = localStorage.getItem('rag_api_key') || '';
+const apiKeyInput = document.getElementById('api-key-input');
+let apiKeyInputTimeout = null;
+
+if (apiKeyInput) {
+    apiKeyInput.value = apiKey;
+    apiKeyInput.addEventListener('input', (e) => {
+        apiKey = e.target.value.trim();
+        localStorage.setItem('rag_api_key', apiKey);
+        
+        clearTimeout(apiKeyInputTimeout);
+        apiKeyInputTimeout = setTimeout(() => {
+            refreshGlobalStats();
+        }, 300);
+    });
+}
+
+// Add visibility toggle listener for API key input
+const toggleKeyVisibilityBtn = document.getElementById('toggle-key-visibility');
+if (toggleKeyVisibilityBtn && apiKeyInput) {
+    toggleKeyVisibilityBtn.addEventListener('click', () => {
+        const isPassword = apiKeyInput.type === 'password';
+        apiKeyInput.type = isPassword ? 'text' : 'password';
+        
+        const eyeIcon = document.getElementById('eye-icon');
+        if (eyeIcon) {
+            if (isPassword) {
+                // Show "eye off" (slash through eye)
+                eyeIcon.innerHTML = `
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                `;
+            } else {
+                // Show normal eye
+                eyeIcon.innerHTML = `
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                `;
+            }
+        }
+    });
+}
+
 let contextLimit = contextLimitSlider ? parseInt(contextLimitSlider.value) : 4096;
 let abortController = null;
 let renderFrame = null;
@@ -79,7 +122,8 @@ function renderMarkdownSoon(container, text) {
         renderFrame = null;
         if (!pendingMarkdownTarget) return;
         try {
-            pendingMarkdownTarget.innerHTML = typeof marked !== 'undefined' ? marked.parse(pendingMarkdownText) : escapeHtml(pendingMarkdownText);
+            const parsedHTML = typeof marked !== 'undefined' ? marked.parse(pendingMarkdownText) : escapeHtml(pendingMarkdownText);
+            pendingMarkdownTarget.innerHTML = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(parsedHTML) : parsedHTML;
         } catch (e) {
             pendingMarkdownTarget.textContent = pendingMarkdownText;
         }
@@ -93,6 +137,7 @@ const AppState = {
     get contextLimit() { return contextLimit; },
     get isGenerating() { return abortController !== null; },
     get abortController() { return abortController; },
+    notifiedAuthError: false,
     
     updateContextLimit(val) {
         contextLimit = val;
@@ -133,7 +178,14 @@ if (input) {
 // ---- Slider & Preset Listeners ----
 if (contextLimitSlider) {
     contextLimitSlider.addEventListener('input', (e) => {
-        AppState.updateContextLimit(parseInt(e.target.value));
+        const val = parseInt(e.target.value);
+        AppState.updateContextLimit(val);
+        
+        // Sync preset buttons active state
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            const presetVal = parseInt(btn.dataset.val);
+            btn.classList.toggle('active', presetVal === val);
+        });
     });
 }
 
@@ -688,22 +740,7 @@ function addMsg(text, type = 'ai', telemetryData = null) {
     const msg = document.createElement('div');
     msg.className = `message msg-${type}`;
     
-    let formattedText = text;
-    if (type === 'ai') {
-        try { 
-            formattedText = typeof marked !== 'undefined' ? marked.parse(text) : text; 
-        } catch (e) { 
-            formattedText = text; 
-        }
-    }
-    
-    // Create header
-    const headerDiv = document.createElement('div');
-    headerDiv.className = 'msg-header';
-    headerDiv.textContent = type === 'user' ? 'You' : 'Agent';
-    msg.appendChild(headerDiv);
-    
-    // Render scratchpad if AI turn and has agent_steps
+    // Parse telemetry first so it is available for formatting decisions
     let parsedTelemetry = null;
     if (type === 'ai' && telemetryData) {
         parsedTelemetry = typeof telemetryData === 'string' ? JSON.parse(telemetryData) : telemetryData;
@@ -717,6 +754,32 @@ function addMsg(text, type = 'ai', telemetryData = null) {
             agentSteps = parsedTelemetry.telemetry.agent_steps;
         }
     }
+    
+    let formattedText = text;
+    let thoughtText = "";
+    let responseText = text;
+    
+    if (type === 'ai') {
+        const parsed = parseThoughts(text);
+        thoughtText = parsed.thought;
+        responseText = parsed.response;
+        
+        try { 
+            const targetText = (thoughtText && responseText && agentSteps && agentSteps.length > 0) ? responseText : (thoughtText && responseText ? responseText : text);
+            const parsedHTML = typeof marked !== 'undefined' ? marked.parse(targetText) : targetText; 
+            formattedText = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(parsedHTML) : parsedHTML;
+        } catch (e) { 
+            formattedText = text; 
+        }
+    } else {
+        formattedText = escapeHtml(text);
+    }
+    
+    // Create header
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'msg-header';
+    headerDiv.textContent = type === 'user' ? 'You' : 'Agent';
+    msg.appendChild(headerDiv);
     
     if (type === 'ai' && agentSteps && agentSteps.length > 0) {
         const scratchpadContainer = document.createElement('div');
@@ -740,6 +803,12 @@ function addMsg(text, type = 'ai', telemetryData = null) {
     // Create body
     const bodyDiv = document.createElement('div');
     bodyDiv.className = 'msg-body';
+    
+    if (type === 'ai' && thoughtText && (!agentSteps || agentSteps.length === 0)) {
+        const thoughtDiv = createThoughtContainer(thoughtText);
+        msg.appendChild(thoughtDiv);
+    }
+    
     bodyDiv.innerHTML = formattedText;
     msg.appendChild(bodyDiv);
     
@@ -782,6 +851,239 @@ function addMsg(text, type = 'ai', telemetryData = null) {
     chatWindow.appendChild(msg);
     chatWindow.scrollTop = chatWindow.scrollHeight;
     return msg;
+}
+
+// Helper to parse thought process and final response from text
+function parseThoughts(text) {
+    let thought = "";
+    let response = text;
+
+    if (!text) {
+        return { thought, response };
+    }
+
+    // 1. Handle <think>...</think> tags (case-insensitive)
+    const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/i);
+    if (thinkMatch) {
+        thought = thinkMatch[1].trim();
+        response = text.replace(/<think>[\s\S]*?<\/think>/i, "").trim();
+        return { thought, response };
+    }
+
+    // 2. Handle Thought: ... Final Answer: ... (case-insensitive)
+    const finalAnswerIdx = text.search(/Final Answer:/i);
+    if (finalAnswerIdx !== -1) {
+        const thoughtPart = text.substring(0, finalAnswerIdx);
+        const responsePart = text.substring(finalAnswerIdx + "Final Answer:".length);
+        
+        const thoughtMatch = thoughtPart.match(/Thought:\s*([\s\S]*)/i);
+        if (thoughtMatch) {
+            thought = thoughtMatch[1].trim();
+        } else {
+            thought = thoughtPart.replace(/^\s*Thought:\s*/i, "").trim();
+        }
+        response = responsePart.trim();
+        return { thought, response };
+    }
+
+    // 3. Handle Thought: ... Action: ... (case-insensitive)
+    const actionIdx = text.search(/Action:/i);
+    if (actionIdx !== -1) {
+        const thoughtPart = text.substring(0, actionIdx);
+        const responsePart = text.substring(actionIdx);
+        
+        const thoughtMatch = thoughtPart.match(/Thought:\s*([\s\S]*)/i);
+        if (thoughtMatch) {
+            thought = thoughtMatch[1].trim();
+        } else {
+            thought = thoughtPart.replace(/^\s*Thought:\s*/i, "").trim();
+        }
+        response = responsePart.trim();
+        return { thought, response };
+    }
+
+    // 4. Handle ONLY Thought: ... at the beginning of the text
+    if (/^\s*Thought:/i.test(text)) {
+        thought = text.replace(/^\s*Thought:\s*/i, "").trim();
+        response = "";
+        return { thought, response };
+    }
+
+    return { thought, response };
+}
+
+// Helper to create a styled thought container DOM element
+function createThoughtContainer(thoughtText) {
+    const container = document.createElement('div');
+    container.className = 'thought-container collapsed';
+    
+    const formattedThought = typeof marked !== 'undefined' ? marked.parse(thoughtText) : escapeHtml(thoughtText);
+    const sanitizedThought = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(formattedThought) : formattedThought;
+    
+    container.innerHTML = `
+        <div class="thought-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <svg class="thought-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; color: var(--accent-indigo); vertical-align: middle;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <span style="font-family: var(--font-sans); letter-spacing: 0.02em;">Thinking Process</span>
+            </div>
+            <svg class="thought-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; opacity: 0.7; transition: transform 0.2s ease;">
+                <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+        </div>
+        <div class="thought-body">
+            ${sanitizedThought}
+        </div>
+    `;
+    
+    const header = container.querySelector('.thought-header');
+    header.addEventListener('click', () => {
+        container.classList.toggle('collapsed');
+    });
+    
+    return container;
+}
+
+// Helper to parse thought process and final response from streaming text
+function parseThoughtsStream(text) {
+    let thought = "";
+    let response = text;
+    let isThinking = false;
+    let hasThought = false;
+
+    if (!text) {
+        return { thought, response, isThinking, hasThought };
+    }
+
+    // 1. Handle <think> tag (case-insensitive)
+    const thinkStartIdx = text.toLowerCase().indexOf("<think>");
+    if (thinkStartIdx !== -1) {
+        hasThought = true;
+        const thinkEndIdx = text.toLowerCase().indexOf("</think>", thinkStartIdx);
+        if (thinkEndIdx !== -1) {
+            thought = text.substring(thinkStartIdx + 7, thinkEndIdx).trim();
+            response = text.substring(thinkEndIdx + 8).trim();
+            isThinking = false;
+        } else {
+            thought = text.substring(thinkStartIdx + 7).trim();
+            response = "";
+            isThinking = true;
+        }
+        return { thought, response, isThinking, hasThought };
+    }
+
+    // 2. Handle Thought: ... Final Answer: ... (case-insensitive)
+    const thoughtStartIdx = text.search(/Thought:/i);
+    const finalAnswerIdx = text.search(/Final Answer:/i);
+
+    if (thoughtStartIdx !== -1) {
+        hasThought = true;
+        if (finalAnswerIdx !== -1) {
+            thought = text.substring(thoughtStartIdx + 8, finalAnswerIdx).trim();
+            response = text.substring(finalAnswerIdx + 13).trim();
+            isThinking = false;
+        } else {
+            thought = text.substring(thoughtStartIdx + 8).trim();
+            response = "";
+            isThinking = true;
+        }
+        return { thought, response, isThinking, hasThought };
+    }
+
+    // 3. Handle Thought: ... Action: ... (case-insensitive)
+    const actionIdx = text.search(/Action:/i);
+    if (thoughtStartIdx !== -1 && actionIdx !== -1) {
+        hasThought = true;
+        thought = text.substring(thoughtStartIdx + 8, actionIdx).trim();
+        response = text.substring(actionIdx).trim();
+        isThinking = false;
+        return { thought, response, isThinking, hasThought };
+    }
+
+    // 4. Handle ONLY Thought: ... at the beginning of the text
+    if (/^\s*Thought:/i.test(text)) {
+        hasThought = true;
+        thought = text.replace(/^\s*Thought:\s*/i, "").trim();
+        response = "";
+        isThinking = true;
+        return { thought, response, isThinking, hasThought };
+    }
+
+    return { thought, response, isThinking, hasThought };
+}
+
+// Updates the UI live during generation streaming
+function updateStreamUI(aiBubble, accumulatedText) {
+    const bodyContainer = aiBubble.querySelector('.msg-body');
+    if (!bodyContainer) return;
+
+    const { thought, response, isThinking, hasThought } = parseThoughtsStream(accumulatedText);
+
+    // If ReAct accordion steps are present, we suppress the collapsible thought box
+    const accordion = aiBubble.querySelector('.scratchpad-accordion');
+    const hasAccordionSteps = accordion && accordion.querySelector('.scratchpad-steps').childElementCount > 0;
+
+    if (hasThought && !hasAccordionSteps) {
+        // Find or create thought container
+        let thoughtDiv = aiBubble.querySelector('.stream-thought-container');
+        if (!thoughtDiv) {
+            thoughtDiv = document.createElement('div');
+            thoughtDiv.className = 'thought-container stream-thought-container';
+            // Start expanded by default while thinking
+            thoughtDiv.innerHTML = `
+                <div class="thought-header">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <svg class="thought-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; color: var(--accent-indigo); vertical-align: middle;">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        <span style="font-family: var(--font-sans); letter-spacing: 0.02em;" class="thought-title-text">Thinking Process...</span>
+                    </div>
+                    <svg class="thought-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; opacity: 0.7; transition: transform 0.2s ease;">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+                <div class="thought-body" style="white-space: pre-wrap;"></div>
+            `;
+            const header = thoughtDiv.querySelector('.thought-header');
+            header.addEventListener('click', () => {
+                thoughtDiv.classList.toggle('collapsed');
+            });
+            aiBubble.insertBefore(thoughtDiv, bodyContainer);
+        }
+
+        const titleText = thoughtDiv.querySelector('.thought-title-text');
+        if (titleText) {
+            titleText.textContent = isThinking ? "Thinking Process..." : "Thinking Process";
+        }
+
+        const thoughtBody = thoughtDiv.querySelector('.thought-body');
+        if (thoughtBody) {
+            thoughtBody.textContent = thought;
+        }
+
+        // If thinking is finished, collapse it
+        if (!isThinking) {
+            thoughtDiv.classList.add('collapsed');
+        } else {
+            thoughtDiv.classList.remove('collapsed');
+        }
+    } else {
+        // If no thought or accordion steps are present, remove thought container if it exists
+        const thoughtDiv = aiBubble.querySelector('.stream-thought-container');
+        if (thoughtDiv) {
+            thoughtDiv.remove();
+        }
+    }
+
+    // Update bodyContainer content with response (or raw text if no thought)
+    const targetResponse = (hasThought && !hasAccordionSteps) ? response : accumulatedText;
+    bodyContainer.style.whiteSpace = 'pre-wrap';
+    bodyContainer.textContent = targetResponse;
 }
 
 // HTML Escaping Helper for Telemetry JSON Inject
@@ -902,9 +1204,13 @@ form.addEventListener('submit', async (e) => {
     let accumulatedText = "";
 
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+        }
         const response = await fetch(`${API_BASE}/query_stream`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ 
                 question: query, 
                 session_id: AppState.sid, 
@@ -1018,7 +1324,7 @@ form.addEventListener('submit', async (e) => {
                     }
                     
                     accumulatedText += data.text;
-                    renderMarkdownSoon(bodyContainer, accumulatedText);
+                    updateStreamUI(aiBubble, accumulatedText);
                     chatWindow.scrollTop = chatWindow.scrollHeight;
                 }
                 else if (data.event === "error") {
@@ -1029,13 +1335,36 @@ form.addEventListener('submit', async (e) => {
                     addLog(`Processing complete: ${latency}ms`, 'SUCCESS');
                     bodyContainer.classList.remove('typing-cursor');
                     
+                    // Reset inline styling applied for streaming
+                    bodyContainer.style.whiteSpace = '';
+                    bodyContainer.innerHTML = '';
+                    
+                    // Remove streaming thought container if present
+                    const streamThoughtDiv = aiBubble.querySelector('.stream-thought-container');
+                    if (streamThoughtDiv) {
+                        streamThoughtDiv.remove();
+                    }
+                    
                     // Final apply post formatting
                     if (renderFrame) {
                         cancelAnimationFrame(renderFrame);
                         renderFrame = null;
                     }
                     try {
-                        bodyContainer.innerHTML = typeof marked !== 'undefined' ? marked.parse(accumulatedText) : escapeHtml(accumulatedText);
+                        const { thought, response } = parseThoughts(accumulatedText);
+                        const hasAccordionSteps = accordion && accordion.querySelector('.scratchpad-steps').childElementCount > 0;
+                        
+                        if (thought && response && !hasAccordionSteps) {
+                            const thoughtDiv = createThoughtContainer(thought);
+                            aiBubble.insertBefore(thoughtDiv, bodyContainer);
+                            
+                            const parsedHTML = typeof marked !== 'undefined' ? marked.parse(response) : escapeHtml(response);
+                            bodyContainer.innerHTML = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(parsedHTML) : parsedHTML;
+                        } else {
+                            const targetText = (thought && response) ? response : accumulatedText;
+                            const parsedHTML = typeof marked !== 'undefined' ? marked.parse(targetText) : escapeHtml(targetText);
+                            bodyContainer.innerHTML = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(parsedHTML) : parsedHTML;
+                        }
                     } catch (e) {
                         bodyContainer.textContent = accumulatedText;
                     }
@@ -1250,7 +1579,11 @@ document.getElementById('file-in').addEventListener('change', async (e) => {
     fd.append('file', file);
     
     try {
-        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: fd });
+        const headers = {};
+        if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+        const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: fd, headers: headers });
         if (res.ok) { 
             const data = await res.json();
             feedback.textContent = `Indexed successfully!`;
@@ -1310,9 +1643,65 @@ if (budgetDropdownTrigger && budgetDropdownMenu) {
 }
 
 // ---- Background Polling ----
+let statsAbortController = null;
+
 async function refreshGlobalStats() {
+    if (statsAbortController) {
+        statsAbortController.abort();
+    }
+    statsAbortController = new AbortController();
+    const signal = statsAbortController.signal;
+
     try {
-        const res = await fetch(`${API_BASE}/stats`);
+        const headers = {};
+        if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+        const res = await fetch(`${API_BASE}/stats`, { headers, signal });
+        
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+
+        if (res.status === 401) {
+            if (statusDot) {
+                statusDot.className = 'status-dot';
+                statusDot.style.background = 'var(--accent-red)';
+                statusDot.style.boxShadow = '0 0 6px var(--accent-red)';
+            }
+            if (statusText) statusText.textContent = 'Unauthorized';
+            
+            if (apiKeyInput) {
+                apiKeyInput.style.borderColor = 'rgba(248, 113, 113, 0.4)';
+                apiKeyInput.style.boxShadow = '0 0 4px rgba(248, 113, 113, 0.2)';
+            }
+
+            if (!AppState.notifiedAuthError) {
+                addLog("API Authentication failed: Invalid or missing API Key. Please enter the correct key in the status bar.", "ERROR");
+                AppState.notifiedAuthError = true;
+            }
+            return;
+        }
+
+        if (res.ok) {
+            if (statusDot) {
+                statusDot.className = 'status-dot online';
+                statusDot.style.background = '';
+                statusDot.style.boxShadow = '';
+            }
+            if (statusText) statusText.textContent = 'Online';
+            
+            if (apiKeyInput) {
+                apiKeyInput.style.borderColor = 'rgba(74, 222, 128, 0.4)';
+                apiKeyInput.style.boxShadow = '0 0 4px rgba(74, 222, 128, 0.2)';
+            }
+
+            if (AppState.notifiedAuthError) {
+                addLog("API Authentication successful! Connection established.", "SUCCESS");
+                AppState.notifiedAuthError = false;
+                loadHistory(); // Reload conversation history upon successful verification
+            }
+        }
+
         const data = await res.json();
         statQ.textContent = data.queries_handled || 0;
         statC.textContent = Math.round((1 - data.avg_compression) * 100) + '%';
@@ -1321,14 +1710,53 @@ async function refreshGlobalStats() {
         }
         if (data.cpu_usage_percent !== undefined)      statCpu.textContent = Math.round(data.cpu_usage_percent) + '%';
         if (data.memory_usage_percent !== undefined)   statRam.textContent = Math.round(data.memory_usage_percent) + '%';
-    } catch (e) {}
+    } catch (e) {
+        if (e.name === 'AbortError') return;
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        if (statusDot) {
+            statusDot.className = 'status-dot';
+            statusDot.style.background = 'var(--accent-red)';
+            statusDot.style.boxShadow = '0 0 6px var(--accent-red)';
+        }
+        if (statusText) statusText.textContent = 'Offline';
+        
+        // Reset API key input border color on offline/error
+        if (apiKeyInput) {
+            apiKeyInput.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+            apiKeyInput.style.boxShadow = 'none';
+        }
+    }
 }
 
 // ---- Thread Restoration (Database history load) ----
 async function loadHistory() {
     try {
         addLog("Restoring session conversation thread...", "SYSTEM");
-        const res = await fetch(`${API_BASE}/history/${sid}`);
+        const headers = {};
+        if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+        const res = await fetch(`${API_BASE}/history/${sid}`, { headers });
+        if (res.status === 401) {
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            if (statusDot) {
+                statusDot.className = 'status-dot';
+                statusDot.style.background = 'var(--accent-red)';
+                statusDot.style.boxShadow = '0 0 6px var(--accent-red)';
+            }
+            if (statusText) statusText.textContent = 'Unauthorized';
+            if (apiKeyInput) {
+                apiKeyInput.style.borderColor = 'rgba(248, 113, 113, 0.4)';
+                apiKeyInput.style.boxShadow = '0 0 4px rgba(248, 113, 113, 0.2)';
+            }
+            if (!AppState.notifiedAuthError) {
+                addLog("API Authentication failed: Invalid or missing API Key. Please enter the correct key in the status bar.", "ERROR");
+                AppState.notifiedAuthError = true;
+            }
+            return;
+        }
         if (!res.ok) {
             // Session may be corrupted — clear it and generate a fresh SID
             addLog(`Session rejected by server (HTTP ${res.status}). Resetting session.`, "WARNING");
@@ -1339,6 +1767,12 @@ async function loadHistory() {
             return;
         }
         
+        if (apiKeyInput) {
+            apiKeyInput.style.borderColor = 'rgba(74, 222, 128, 0.4)';
+            apiKeyInput.style.boxShadow = '0 0 4px rgba(74, 222, 128, 0.2)';
+        }
+        AppState.notifiedAuthError = false;
+
         const history = await res.json();
         chatWindow.innerHTML = '';
         
@@ -1391,6 +1825,22 @@ const toggleRightBtn = document.getElementById('toggle-right-sidebar');
 const mainGrid = document.querySelector('.main-grid');
 const agentWorkbench = document.getElementById('agent-workbench');
 
+function syncHeaderToggleButtons() {
+    if (!toggleLeftBtn || !toggleRightBtn || !agentWorkbench) return;
+    toggleLeftBtn.classList.remove('active');
+    toggleRightBtn.classList.remove('active');
+    
+    if (agentWorkbench.classList.contains('open')) {
+        const activeTab = agentWorkbench.querySelector('.agent-workbench-tab.active');
+        const pageName = activeTab ? activeTab.dataset.workbenchTab : null;
+        if (pageName === 'trace') {
+            toggleLeftBtn.classList.add('active');
+        } else if (pageName === 'evidence') {
+            toggleRightBtn.classList.add('active');
+        }
+    }
+}
+
 function activateWorkbenchPage(pageName) {
     if (!agentWorkbench) return;
     agentWorkbench.querySelectorAll('.agent-workbench-tab').forEach(tab => {
@@ -1399,6 +1849,7 @@ function activateWorkbenchPage(pageName) {
     agentWorkbench.querySelectorAll('.workbench-page').forEach(page => {
         page.classList.toggle('active', page.dataset.workbenchPage === pageName);
     });
+    syncHeaderToggleButtons();
 }
 
 function activateTraceTab(tabName) {
@@ -1445,6 +1896,7 @@ function openWorkbench(target = 'trace') {
     agentWorkbench.classList.add('open');
     agentWorkbench.setAttribute('aria-hidden', 'false');
     document.body.classList.add('workbench-open');
+    syncHeaderToggleButtons();
 }
 
 function closeWorkbench() {
@@ -1452,6 +1904,7 @@ function closeWorkbench() {
     agentWorkbench.classList.remove('open');
     agentWorkbench.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('workbench-open');
+    syncHeaderToggleButtons();
 }
 
 document.querySelectorAll('[data-workbench-open]').forEach(btn => {

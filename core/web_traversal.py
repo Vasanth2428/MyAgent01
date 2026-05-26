@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple
 
 logger = logging.getLogger("RAG.WebTraversal")
 
-def search_web(query: str) -> List[Dict]:
+def search_web(query: str, timeout: int = 10) -> List[Dict]:
     """
     Searches DuckDuckGo Lite and returns a list of results.
     Each result contains: title, url, snippet.
@@ -19,7 +19,7 @@ def search_web(query: str) -> List[Dict]:
         logger.info(f"Searching web via DuckDuckGo Lite for: {query}")
         # Use POST to /lite/ as it is more stable and does not get redirected easily
         data = {"q": query}
-        response = requests.post(url, headers=headers, data=data, timeout=10)
+        response = requests.post(url, headers=headers, data=data, timeout=timeout)
         if response.status_code != 200:
             logger.warning(f"DuckDuckGo Lite returned status code {response.status_code}")
             return []
@@ -55,11 +55,14 @@ def search_web(query: str) -> List[Dict]:
                 })
         logger.info(f"Found {len(results)} search results.")
         return results
+    except requests.exceptions.Timeout as e:
+        logger.error(f"Timeout during DuckDuckGo search: {e}", exc_info=True)
+        raise
     except Exception as e:
         logger.error(f"Error during DuckDuckGo search: {e}", exc_info=True)
         return []
 
-def fetch_web_page(url: str, max_chars: int = 10000) -> Tuple[str, List[Dict]]:
+def fetch_web_page(url: str, max_chars: int = 10000, timeout: int = 15) -> Tuple[str, List[Dict]]:
     """
     Fetches raw HTML, strips script/style/nav/header/footer tags, normalizes whitespace,
     extracts main text content, and returns the top absolute hyperlinks and cleaned text.
@@ -69,7 +72,7 @@ def fetch_web_page(url: str, max_chars: int = 10000) -> Tuple[str, List[Dict]]:
     }
     try:
         logger.info(f"Fetching web page: {url}")
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=timeout)
         if response.status_code != 200:
             return f"Error: Received status code {response.status_code}", []
         
@@ -128,6 +131,9 @@ def fetch_web_page(url: str, max_chars: int = 10000) -> Tuple[str, List[Dict]]:
             
         logger.info(f"Successfully fetched {url}. Text length: {len(truncated_text)}, links: {len(links)}")
         return truncated_text, links
+    except requests.exceptions.Timeout as e:
+        logger.error(f"Timeout fetching web page {url}: {e}", exc_info=True)
+        raise
     except Exception as e:
         logger.error(f"Error fetching web page {url}: {e}", exc_info=True)
         return f"Error fetching web page: {e}", []

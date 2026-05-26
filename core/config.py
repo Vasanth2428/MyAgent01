@@ -36,6 +36,10 @@ SAFETY_CHAR_LIMIT = 16000        # Hard character limit for Simple RAG mode
 # --- Chunking ---
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
+PARENT_CHUNK_SIZE = 1500       # target parent token length
+CHILD_CHUNK_SIZE = 300         # target child token length
+CHILD_CHUNK_OVERLAP = 50       # target child token overlap
+
 
 # --- Memory ---
 MEMORY_DECAY_RATE = 0.1

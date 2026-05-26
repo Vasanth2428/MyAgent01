@@ -19,8 +19,10 @@ import weaviate
 import weaviate.classes as wvc
 from weaviate.classes.init import Auth
 from sentence_transformers import SentenceTransformer
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import weaviate.exceptions
+from weaviate.classes.query import QueryReference
+
 
 from core.config import EMBEDDING_MODEL, HYBRID_ALPHA_DEFAULT, HYBRID_ALPHA_KEYWORD
 
@@ -70,15 +72,42 @@ class WeaviateRetriever:
                 time.sleep(delay)
 
         # Ensure the collection schema is initialized
-        if not self.client.collections.exists("RAGKnowledge"):
-            logger.info("Initializing 'RAGKnowledge' collection...")
+        if not self.client.collections.exists("RAGParentKnowledge"):
+            logger.info("Initializing 'RAGParentKnowledge' collection...")
+            self.client.collections.create(
+                name="RAGParentKnowledge",
+                vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                properties=[
+                    wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
+                    wvc.config.Property(name="source", data_type=wvc.config.DataType.TEXT),
+                ]
+            )
+
+        recreate_child = False
+        if self.client.collections.exists("RAGKnowledge"):
+            coll = self.client.collections.get("RAGKnowledge")
+            config = coll.config.get()
+            has_parent_ref = any(ref.name == "parent" for ref in config.references)
+            if not has_parent_ref:
+                logger.info("RAGKnowledge collection exists but is missing 'parent' reference. Deleting and recreating for parent-child schema support.")
+                self.client.collections.delete("RAGKnowledge")
+                recreate_child = True
+
+        if recreate_child or not self.client.collections.exists("RAGKnowledge"):
+            logger.info("Initializing 'RAGKnowledge' collection with parent-child references...")
             self.client.collections.create(
                 name="RAGKnowledge",
-                vector_config=wvc.config.Configure.Vectorizer.none(),
+                vectorizer_config=wvc.config.Configure.Vectorizer.none(),
                 properties=[
                     wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
                     wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
                     wvc.config.Property(name="source", data_type=wvc.config.DataType.TEXT),
+                ],
+                references=[
+                    wvc.config.ReferenceProperty(
+                        name="parent",
+                        target_collection="RAGParentKnowledge"
+                    )
                 ]
             )
 
@@ -128,40 +157,103 @@ class WeaviateRetriever:
                 )
                 time.sleep(delay)
 
-    def add_documents(self, docs: List[str], tags: List[str] = None, source: str = "unknown"):
+    def add_parent_child_documents(self, parent_child_pairs: List[Tuple[str, List[str]]], tags: List[str] = None, source: str = "unknown"):
         """
-        Processes and indexes document chunks into Weaviate.
-        Uses deterministic UUIDs to prevent duplicate entries of the same text.
+        Processes and indexes parent-child document chunks into Weaviate.
+        - parent_child_pairs is a list of (parent_text, List[child_texts]).
+        - Inserts parent chunks into RAGParentKnowledge and child chunks into RAGKnowledge.
+        - Child chunks reference their corresponding parent chunk.
         """
         t_start = time.time()
 
-        embeddings = self.embedding_model.encode(docs)
-        t_embed = time.time()
-        logger.debug(f"Generated {len(docs)} embeddings in {(t_embed - t_start)*1000:.1f}ms")
+        parent_objects = []
+        child_objects = []
+        child_texts = []
 
-        def _batch_insert():
-            with self.collection.batch.dynamic() as batch:
-                for i, doc in enumerate(docs):
-                    doc_id = uuid.uuid5(uuid.NAMESPACE_DNS, doc)
+        parent_coll = self.client.collections.get("RAGParentKnowledge")
+        child_coll = self.client.collections.get("RAGKnowledge")
+
+        for parent_text, children in parent_child_pairs:
+            # Deterministic Parent UUID
+            parent_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"parent_{parent_text}")
+            parent_objects.append({
+                "uuid": parent_uuid,
+                "properties": {"text": parent_text, "source": source}
+            })
+
+            for child_text in children:
+                # Deterministic Child UUID
+                child_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"child_{child_text}")
+                child_texts.append(child_text)
+                child_objects.append({
+                    "uuid": child_uuid,
+                    "parent_uuid": parent_uuid,
+                    "properties": {
+                        "text": child_text,
+                        "tags": tags or [],
+                        "source": source
+                    }
+                })
+
+        if not child_texts:
+            return
+
+        # Generate embeddings for all children
+        embeddings = self.embedding_model.encode(child_texts)
+        t_embed = time.time()
+        logger.debug(f"Generated {len(child_texts)} embeddings in {(t_embed - t_start)*1000:.1f}ms")
+
+        # Dynamic Batch Insert Parents
+        def _batch_insert_parents():
+            with parent_coll.batch.dynamic() as batch:
+                for p in parent_objects:
                     batch.add_object(
-                        properties={"text": doc, "tags": tags or [], "source": source},
-                        vector=embeddings[i].tolist() if hasattr(embeddings[i], "tolist") else embeddings[i],
-                        uuid=doc_id
+                        properties=p["properties"],
+                        uuid=p["uuid"]
                     )
                 batch.flush()
-                failed = self.collection.batch.failed_objects
+                failed = parent_coll.batch.failed_objects
                 if failed:
-                    raise weaviate.exceptions.WeaviateQueryError(
-                        f"Weaviate batch insert failed for {len(failed)} objects. First error: {failed[0].message}"
+                    raise Exception(
+                        f"Weaviate parent batch insert failed for {len(failed)} objects. First error: {failed[0].message}"
                     )
 
-        self.execute_with_retry(_batch_insert)
+        self.execute_with_retry(_batch_insert_parents)
+
+        # Dynamic Batch Insert Children pointing to Parents
+        def _batch_insert_children():
+            with child_coll.batch.dynamic() as batch:
+                for i, c in enumerate(child_objects):
+                    batch.add_object(
+                        properties=c["properties"],
+                        vector=embeddings[i].tolist() if hasattr(embeddings[i], "tolist") else embeddings[i],
+                        uuid=c["uuid"],
+                        references={"parent": c["parent_uuid"]}
+                    )
+                batch.flush()
+                failed = child_coll.batch.failed_objects
+                if failed:
+                    raise Exception(
+                        f"Weaviate child batch insert failed for {len(failed)} objects. First error: {failed[0].message}"
+                    )
+
+        self.execute_with_retry(_batch_insert_children)
 
         t_batch = time.time()
         logger.info(
-            f"Indexed {len(docs)} chunks from '{source}' in {(t_batch - t_start)*1000:.1f}ms "
+            f"Indexed {len(parent_objects)} parents and {len(child_objects)} children from '{source}' in {(t_batch - t_start)*1000:.1f}ms "
             f"(Embed: {(t_embed - t_start)*1000:.1f}ms, Insert: {(t_batch - t_embed)*1000:.1f}ms)"
         )
+
+    def add_documents(self, docs: List[str], tags: List[str] = None, source: str = "unknown"):
+        """
+        Backward compatible flat document chunk list ingestion.
+        Treats each document chunk as its own parent.
+        """
+        # Convert each chunk to a parent-child relationship where the chunk is both parent and child
+        pairs = [(doc, [doc]) for doc in docs]
+        self.add_parent_child_documents(pairs, tags=tags, source=source)
+
 
     def _detect_alpha(self, query: str) -> float:
         """
@@ -177,6 +269,7 @@ class WeaviateRetriever:
     def retrieve(self, query: str, top_k: int = 5, source_filter: str = None) -> List[Dict]:
         """
         Performs a Hybrid Search (Semantic + Keyword) with optional hard filtering.
+        Retrieves the small child chunks, but resolves and serves their parent chunks.
         """
         t_start = time.time()
         query_vector = self.embedding_model.encode(query).tolist()
@@ -197,6 +290,12 @@ class WeaviateRetriever:
                 limit=top_k,
                 filters=filters,
                 return_properties=["text", "tags", "source"],
+                return_references=[
+                    QueryReference(
+                        link_on="parent",
+                        return_properties=["text", "source"]
+                    )
+                ],
                 return_metadata=wvc.query.MetadataQuery(score=True)
             )
 
@@ -206,12 +305,20 @@ class WeaviateRetriever:
         self.last_embed_latency_ms = (t_embed - t_start) * 1000
         self.last_search_latency_ms = (t_search - t_embed) * 1000
 
-        res = [{
-            "text": obj.properties["text"],
-            "tags": obj.properties.get("tags") or [],
-            "source": obj.properties.get("source"),
-            "score": obj.metadata.score
-        } for obj in response.objects]
+        res = []
+        for obj in response.objects:
+            text = obj.properties["text"]  # child text fallback
+            if "parent" in obj.references and obj.references["parent"].objects:
+                parent_text = obj.references["parent"].objects[0].properties.get("text")
+                if parent_text:
+                    text = parent_text
+            
+            res.append({
+                "text": text,
+                "tags": obj.properties.get("tags") or [],
+                "source": obj.properties.get("source"),
+                "score": obj.metadata.score
+            })
 
         logger.info(
             f"Hybrid search (alpha={alpha}) found {len(res)} results "

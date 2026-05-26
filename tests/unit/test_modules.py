@@ -8,7 +8,7 @@ if not os.environ.get("GROQ_API_KEY"):
     os.environ["GROQ_API_KEY"] = "gsk_dummy_key_for_testing_purposes"
 
 from core.config import CHUNK_SIZE, CHUNK_OVERLAP
-from core.splitter import RecursiveCharacterSplitter
+from core.splitter import RecursiveCharacterSplitter, ParentChildSplitter
 from core.compressor import Compressor
 from core.memory import ConversationMemory
 from core.persistence import PersistentMemoryStore
@@ -27,6 +27,34 @@ class TestRecursiveCharacterSplitter(unittest.TestCase):
     def test_empty_string(self):
         splitter = RecursiveCharacterSplitter()
         self.assertEqual(splitter.split_text(""), [])
+
+
+class TestParentChildSplitter(unittest.TestCase):
+    def test_parent_child_splitting(self):
+        # We set parent_size to ~30 tokens and child_size to ~10 tokens
+        splitter = ParentChildSplitter(parent_size=30, child_size=10, child_overlap=2)
+        text = (
+            "Paragraph one is about networking protocols like OSPF and BGP. They route traffic. "
+            "OSPF is link state, BGP is path vector. "
+            "\n\n"
+            "Paragraph two is about network address translation (NAT). It maps IP addresses. "
+            "It saves public IPv4 space. NAT overload maps many to one using ports."
+        )
+        pairs = splitter.split_text(text)
+        self.assertTrue(len(pairs) >= 2)
+        
+        # Verify that parent text has child texts
+        for parent, children in pairs:
+            self.assertTrue(len(parent) > 0)
+            self.assertTrue(len(children) > 0)
+            # Parent must contain each child
+            for child in children:
+                self.assertIn(child, parent)
+
+    def test_empty_inputs(self):
+        splitter = ParentChildSplitter()
+        self.assertEqual(splitter.split_text(""), [])
+        self.assertEqual(splitter.split_text("   "), [])
 
 
 class TestCompressor(unittest.TestCase):
@@ -540,6 +568,42 @@ class TestRetrieverRobustness(unittest.TestCase):
             
         self.assertEqual(mock_op.call_count, 1)
         self.assertEqual(mock_sleep.call_count, 0)
+
+    @patch('weaviate.connect_to_weaviate_cloud')
+    @patch('core.retriever.SentenceTransformer')
+    def test_add_parent_child_documents(self, mock_st, mock_connect):
+        """Verify parent-child document insertion batches are executed."""
+        from core.retriever import WeaviateRetriever
+        
+        mock_client = MagicMock()
+        mock_client.collections.exists.return_value = True
+        mock_connect.return_value = mock_client
+        
+        # Mock parent and child collections
+        mock_parent_coll = MagicMock()
+        mock_child_coll = MagicMock()
+        
+        # Prevent mock dynamic batch failed_objects evaluation as True
+        mock_parent_coll.batch.failed_objects = []
+        mock_child_coll.batch.failed_objects = []
+        
+        # Setup mock client collections get dict mapping
+        colls = {"RAGParentKnowledge": mock_parent_coll, "RAGKnowledge": mock_child_coll}
+        mock_client.collections.get.side_effect = lambda name: colls.get(name)
+        
+        retriever = WeaviateRetriever()
+        
+        # Mock embedding model output
+        retriever.embedding_model.encode.return_value = [[0.1]*384]
+        
+        # Call add_parent_child_documents
+        pairs = [("Parent text", ["Child text"])]
+        retriever.add_parent_child_documents(pairs, source="test.txt")
+        
+        # Assert parent collection get and batch insertion
+        self.assertTrue(mock_parent_coll.batch.dynamic.called)
+        self.assertTrue(mock_child_coll.batch.dynamic.called)
+
 
 class TestEngineStreaming(unittest.TestCase):
     @patch('core.engine.WeaviateRetriever')

@@ -110,11 +110,9 @@ class AgenticSystem:
         self.rag_subsystem = RAGSubsystem(self)
         self.context_engine_subsystem = ContextEngineSubsystem(self)
 
-        # Initialize ReAct Agent
-        from core.agent_refactored import RAGAgent
-        from core.agent_tools import ToolRegistry
-        tool_registry = ToolRegistry()
-        self.agent = RAGAgent(self, tool_registry=tool_registry)
+        # Initialize ReAct Agent (Retrieval-First Architecture)
+        from core.agent import RAGAgent as RetrievalFirstAgent
+        self.agent = RetrievalFirstAgent(self)
 
     # ------------------------------------------------------------------
     # Memory helpers
@@ -318,17 +316,38 @@ class AgenticSystem:
                 0, count_tokens(raw_context), TOTAL_CONTEXT_BUDGET, 0.0, []
             )
 
-    def _phase_generate(self, query: str, final_context: str, latencies: dict):
-        """Phase 6: LLM Generation."""
+    def _phase_generate(self, query: str, final_context: str, latencies: dict, confidence: float = 1.0):
+        """Phase 6: LLM Generation with grounding enforcement."""
         t = time.time()
         logger.info("[P6: GENERATION] Sending to Groq...")
-        prompt = (
-            "Answer the user question using ONLY the provided context. "
-            "If the information is missing, state that you don't know.\n\n"
-            f"### CONTEXT:\n{final_context}\n\n"
-            f"### QUESTION:\n{query}\n\n"
-            "### ANSWER:"
-        )
+        
+        # Build grounded prompt with confidence awareness
+        if confidence < 0.3:
+            prompt = (
+                "Answer the user question using ONLY the provided context. "
+                "The retrieved evidence has LOW CONFIDENCE - if uncertain, explicitly state it.\n\n"
+                f"### CONTEXT:\n{final_context}\n\n"
+                f"### QUESTION:\n{query}\n\n"
+                "If you cannot find a definitive answer in the context, respond: "
+                "'The knowledge base does not contain sufficient information to answer this question.'\n\n"
+                "### ANSWER:"
+            )
+        elif confidence < 0.5:
+            prompt = (
+                "Answer the user question using ONLY the provided context. "
+                "The retrieved evidence has MEDIUM CONFIDENCE - indicate uncertainty where appropriate.\n\n"
+                f"### CONTEXT:\n{final_context}\n\n"
+                f"### QUESTION:\n{query}\n\n"
+                "### ANSWER:"
+            )
+        else:
+            prompt = (
+                "Answer the user question using ONLY the provided context. "
+                "If the information is missing, state that you don't know.\n\n"
+                f"### CONTEXT:\n{final_context}\n\n"
+                f"### QUESTION:\n{query}\n\n"
+                "### ANSWER:"
+            )
         prompt_tokens_est = count_tokens(prompt)
         ctx_used_pct = round((prompt_tokens_est / CONTEXT_WINDOW_LIMIT) * 100, 2)
         exact_tokens = {"prompt": 0, "completion": 0, "total": 0}
@@ -499,6 +518,9 @@ class AgenticSystem:
          mem_tokens, doc_tokens, doc_budget, peak_score, eviction_log) = self._phase_refine(
             query, mode, memory, all_raw, top_k, latencies
         )
+        
+        # Calculate confidence from reranker peak score
+        confidence = min(1.0, peak_score * 2) if peak_score > 0 else 0.5
 
         # Apply overflow handling
         overflow_occurred = False
@@ -511,7 +533,7 @@ class AgenticSystem:
                 query, final_context, memory_text, compressed_docs, memory, all_raw, context_limit
             )
 
-        response, prompt, exact_tokens, ctx_used_pct = self._phase_generate(query, final_context, latencies)
+        response, prompt, exact_tokens, ctx_used_pct = self._phase_generate(query, final_context, latencies, confidence)
 
         cost = (exact_tokens["prompt"] * COST_PER_INPUT_TOKEN) + (exact_tokens["completion"] * COST_PER_OUTPUT_TOKEN)
 
@@ -589,17 +611,29 @@ class AgenticSystem:
             }
         }
 
-    def _phase_generate_stream(self, query: str, final_context: str, latencies: dict) -> Generator[Dict, None, None]:
-        """Phase 6: LLM Generation (Streaming)."""
+    def _phase_generate_stream(self, query: str, final_context: str, latencies: dict, confidence: float = 1.0) -> Generator[Dict, None, None]:
+        """Phase 6: LLM Generation (Streaming) with grounding enforcement."""
         t = time.time()
         logger.info("[P6: GENERATION] Sending to Groq (Streaming)...")
-        prompt = (
-            "Answer the user question using ONLY the provided context. "
-            "If the information is missing, state that you don't know.\n\n"
-            f"### CONTEXT:\n{final_context}\n\n"
-            f"### QUESTION:\n{query}\n\n"
-            "### ANSWER:"
-        )
+        
+        if confidence < 0.3:
+            prompt = (
+                "Answer the user question using ONLY the provided context. "
+                "The retrieved evidence has LOW CONFIDENCE - if uncertain, explicitly state it.\n\n"
+                f"### CONTEXT:\n{final_context}\n\n"
+                f"### QUESTION:\n{query}\n\n"
+                "If you cannot find a definitive answer in the context, respond: "
+                "'The knowledge base does not contain sufficient information to answer this question.'\n\n"
+                "### ANSWER:"
+            )
+        else:
+            prompt = (
+                "Answer the user question using ONLY the provided context. "
+                "If the information is missing, state that you don't know.\n\n"
+                f"### CONTEXT:\n{final_context}\n\n"
+                f"### QUESTION:\n{query}\n\n"
+                "### ANSWER:"
+            )
         try:
             try:
                 stream = self.client.chat.completions.create(
@@ -703,6 +737,9 @@ class AgenticSystem:
          mem_tokens, doc_tokens, doc_budget, peak_score, eviction_log) = self._phase_refine(
             query, mode, memory, all_raw, top_k, latencies
          )
+        
+        # Calculate confidence from reranker peak score
+        confidence = min(1.0, peak_score * 2) if peak_score > 0 else 0.5
 
         # Apply overflow handling
         overflow_occurred = False
@@ -736,7 +773,7 @@ class AgenticSystem:
         # Save placeholder history (will be updated when final response is completed)
         accumulated_response = ""
         exact_tokens = None
-        for chunk in self._phase_generate_stream(query, final_context, latencies):
+        for chunk in self._phase_generate_stream(query, final_context, latencies, confidence):
             if chunk["event"] == "answer_chunk":
                 accumulated_response += chunk["text"]
             elif chunk["event"] == "usage":

@@ -1,3 +1,4 @@
+import os
 import unittest
 import threading
 import requests
@@ -9,6 +10,8 @@ class TestDualChannelConcurrency(unittest.TestCase):
     def setUp(self):
         self.errors = []
         self.results = []
+        self.api_key = os.getenv("RAG_API_KEY", "rag-admin-secret-key-2026")
+        self.headers = {"Authorization": f"Bearer {self.api_key}"}
 
     def send_query(self, session_id, question, mode):
         payload = {
@@ -17,7 +20,7 @@ class TestDualChannelConcurrency(unittest.TestCase):
             "mode": mode
         }
         try:
-            response = requests.post(API_URL, json=payload)
+            response = requests.post(API_URL, json=payload, headers=self.headers)
             if response.status_code != 200:
                 self.errors.append(f"Session {session_id} failed with status {response.status_code}")
                 return

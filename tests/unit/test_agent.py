@@ -1,6 +1,18 @@
+"""
+Tests for retrieval-first RAG agent.
+
+Key concepts tested:
+1. Router determines pipeline BEFORE agent execution
+2. STRICT_RAG pipeline retrieves BEFORE generation (not as tool)
+3. Confidence thresholds trigger uncertainty messaging
+4. Web agent pipeline uses web tools only
+5. Grounded generation uses ONLY retrieved evidence
+"""
+
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, Mock
 from core.agent import RAGAgent
+
 
 def make_mock_stream(text: str):
     mock_chunk = MagicMock()
@@ -9,195 +21,219 @@ def make_mock_stream(text: str):
     mock_chunk.choices[0].delta.content = text
     return [mock_chunk]
 
-class TestRAGAgent(unittest.TestCase):
+
+class TestRAGAgentRouting(unittest.TestCase):
+    """Tests for pipeline routing in RAGAgent."""
 
     def setUp(self):
-        # Create a mock engine
-        self.engine = MagicMock()
-        self.engine.stats = {"queries": 0}
-        self.engine.llm_service = MagicMock()
-        self.engine.llm_service.model = "test-model"
-        
-        # Mock memory
-        self.memory = MagicMock()
-        self.memory.get_active_context.return_value = "User: Hello\nAssistant: Hi"
-        self.engine.get_memory.return_value = self.memory
-        
-        self.agent = RAGAgent(self.engine)
+        self.mock_engine = MagicMock()
+        self.mock_engine.stats = {"queries": 0}
+        self.mock_engine.llm_service = MagicMock()
+        self.mock_engine.llm_service.model = "test-model"
+        self.mock_engine.retriever.get_sources.return_value = ["file1.pdf"]
+        self.mock_engine.retriever.get_count.return_value = 50
+        self.mock_engine.get_memory.return_value = MagicMock()
+        self.mock_engine.get_memory.return_value.get_active_context.return_value = ""
+        self.mock_engine.save_memory = MagicMock()
 
-    def test_parse_action_valid(self):
-        """Tests parsing valid ReAct tool actions."""
-        text = "Thought: I need system details.\nAction: get_system_stats[]\nObservation:"
-        action = self.agent.parse_action(text)
-        self.assertEqual(action, ("get_system_stats", ""))
+    def test_casual_query_routes_to_chat(self):
+        """Simple greetings route to CHAT pipeline without LLM calls for routing."""
+        agent = RAGAgent(self.mock_engine)
+        events = list(agent.run_stream("hello", session_id="test"))
 
-        text = "Thought: Let's query.\nAction: search_knowledge_base[what is the database password]"
-        action = self.agent.parse_action(text)
-        self.assertEqual(action, ("search_knowledge_base", "what is the database password"))
+        routing_event = next((e for e in events if e["event"] == "routing_decision"), None)
+        self.assertIsNotNone(routing_event)
+        self.assertEqual(routing_event["route"], "CHAT_PIPELINE")
 
-    def test_parse_action_invalid(self):
-        """Tests parsing invalid or missing tool actions."""
-        text = "Thought: I should just respond.\nFinal Answer: Hello user."
-        action = self.agent.parse_action(text)
-        self.assertIsNone(action)
-
-    def test_early_exit_greeting(self):
-        """Tests that greetings exit immediately without invoking LLM completions."""
-        events = list(self.agent.run_stream("hello", session_id="test_sess"))
+    def test_private_query_routes_to_strict_rag(self):
+        """Queries with private indicators route to STRICT_RAG."""
+        agent = RAGAgent(self.mock_engine)
         
-        # Find the thought event detailing early exit
-        thought_event = next((e for e in events if e["event"] == "thought"), None)
-        self.assertIsNotNone(thought_event)
-        self.assertIn("simple query or greeting", thought_event["text"])
+        self.mock_engine._phase_retrieve.return_value = [{"text": "doc", "score": 0.9, "cross_score": 0.45}]
+        self.mock_engine.compressor.compress.return_value = "compressed"
         
-        # Find the answer chunk event
-        answer_event = next((e for e in events if e["event"] == "answer_chunk"), None)
-        self.assertIsNotNone(answer_event)
-        self.assertIn("Hello! How can I help you", answer_event["text"])
+        events = list(agent.run_stream("what is our company revenue", session_id="test"))
+        
+        routing_event = next((e for e in events if e["event"] == "routing_decision"), None)
+        self.assertEqual(routing_event["route"], "STRICT_RAG_PIPELINE")
 
-    @patch("psutil.cpu_percent")
-    @patch("psutil.virtual_memory")
-    def test_react_loop_get_stats(self, mock_vm, mock_cpu):
-        """Tests a ReAct loop executing get_system_stats."""
-        mock_cpu.return_value = 12.5
-        mock_vm.return_value.percent = 45.0
-        self.engine.retriever.get_count.return_value = 100
+    def test_web_query_routes_to_web_agent(self):
+        """Queries requiring live data route to WEB_AGENT pipeline."""
+        agent = RAGAgent(self.mock_engine)
         
-        # Prepare LLM responses: First step returns Action: get_system_stats, Second step returns Final Answer
-        self.engine.client.chat.completions.create.side_effect = [
-            make_mock_stream("Thought: I need system status.\nAction: get_system_stats[]"),
-            make_mock_stream("Thought: I have the statistics.\nFinal Answer: The CPU is at 12.5%.")
+        # No sources available means no private content
+        self.mock_engine.retriever.get_sources.return_value = []
+        self.mock_engine.retriever.get_count.return_value = 0
+        
+        self.mock_engine.client.chat.completions.create.side_effect = [
+            make_mock_stream("Thought: Using web tools.\nAction: web_search[current news]\nFinal Answer: Found news.")
         ]
         
-        events = list(self.agent.run_stream("what are system stats", session_id="test_sess"))
+        events = list(agent.run_stream("what is the latest news today", session_id="test"))
         
-        # Expect events:
-        # 1. Thought: I need system status
-        # 2. Action: get_system_stats
-        # 3. Observation: System Stats:...
-        # 4. Answer chunk: The CPU is at 12.5%
-        # 5. Done
+        routing_event = next((e for e in events if e["event"] == "routing_decision"), None)
+        self.assertEqual(routing_event["route"], "WEB_AGENT_PIPELINE")
+
+
+class TestStrictRAGPipeline(unittest.TestCase):
+    """Tests for STRICT_RAG pipeline behavior."""
+
+    def setUp(self):
+        self.mock_engine = MagicMock()
+        self.mock_engine.stats = {"queries": 0}
+        self.mock_engine.llm_service = MagicMock()
+        self.mock_engine.llm_service.model = "test-model"
+        self.mock_engine.retriever.get_sources.return_value = ["file1.pdf"]
+        self.mock_engine.retriever.get_count.return_value = 50
+        self.mock_engine.get_memory.return_value = MagicMock()
+        self.mock_engine.get_memory.return_value.get_active_context.return_value = ""
+        self.mock_engine.save_memory = MagicMock()
+
+    def test_retrieval_happens_before_generation(self):
+        """In STRICT_RAG, retrieval infrastructure runs BEFORE agent synthesis."""
+        agent = RAGAgent(self.mock_engine)
+        
+        self.mock_engine._phase_retrieve.return_value = [{"text": "secret info", "score": 0.9, "cross_score": 0.45}]
+        self.mock_engine.compressor.compress.return_value = "secret info compressed"
+        self.mock_engine.client.chat.completions.create.return_value = make_mock_stream("Answer from evidence.")
+        
+        events = list(agent.run_stream("what is our api key", session_id="test"))
+        
+        retrieval_event = next((e for e in events if e["event"] == "retrieval_phase"), None)
+        self.assertIsNotNone(retrieval_event)
+        
+        doc_event = next((e for e in events if e["event"] == "document_retrieval"), None)
+        self.assertIsNotNone(doc_event)
+
+    def test_low_confidence_triggers_uncertainty_messaging(self):
+        """Low confidence (< 0.3) triggers explicit uncertainty in generation."""
+        agent = RAGAgent(self.mock_engine)
+        
+        self.mock_engine._phase_retrieve.return_value = [{"text": "weak match", "score": 0.1, "cross_score": 0.1}]
+        self.mock_engine.compressor.compress.return_value = "weak match"
+        
+        captured_prompts = []
+        def capture_prompt(**kwargs):
+            captured_prompts.append(kwargs.get("messages", [{}])[0].get("content", ""))
+            return make_mock_stream("I don't have this information.")
+        self.mock_engine.client.chat.completions.create.side_effect = capture_prompt
+        
+        list(agent.run_stream("what is our secret", session_id="test"))
+        
+        prompt = captured_prompts[0] if captured_prompts else ""
+        self.assertIn("LOW CONFIDENCE", prompt)
+
+    def test_evidence_found_in_final_response(self):
+        """Retrieved evidence is included in final done event."""
+        agent = RAGAgent(self.mock_engine)
+        
+        self.mock_engine._phase_retrieve.return_value = [{"text": "document text", "score": 0.9, "cross_score": 0.45}]
+        self.mock_engine.compressor.compress.return_value = "document text"
+        self.mock_engine.client.chat.completions.create.return_value = make_mock_stream("Answer.")
+        
+        events = list(agent.run_stream("what is our policy", session_id="test"))
+        
+        done_event = next((e for e in events if e["event"] == "done"), None)
+        self.assertIsNotNone(done_event)
+        self.assertIn("retrieved_context", done_event["stats"])
+
+
+class TestWebAgentPipeline(unittest.TestCase):
+    """Tests for WEB_AGENT pipeline behavior."""
+
+    def setUp(self):
+        self.mock_engine = MagicMock()
+        self.mock_engine.stats = {"queries": 0}
+        self.mock_engine.llm_service = MagicMock()
+        self.mock_engine.llm_service.model = "test-model"
+        self.mock_engine.retriever.get_sources.return_value = []
+        self.mock_engine.retriever.get_count.return_value = 0
+        self.mock_engine.get_memory.return_value = MagicMock()
+        self.mock_engine.get_memory.return_value.get_active_context.return_value = ""
+        self.mock_engine.save_memory = MagicMock()
+
+    @patch("core.agent.search_web")
+    def test_web_search_tool_execution(self, mock_search):
+        """WEB_AGENT pipeline uses web_search tool."""
+        agent = RAGAgent(self.mock_engine)
+        mock_search.return_value = [{"title": "Result", "url": "https://example.com", "snippet": "Info"}]
+        
+        self.mock_engine.client.chat.completions.create.side_effect = [
+            make_mock_stream("Thought: Searching.\nAction: web_search[current news]\nFinal Answer: Found."),
+        ]
+        
+        events = list(agent.run_stream("what is happening today", session_id="test"))
+        
+        action_event = next((e for e in events if e["event"] == "action"), None)
+        self.assertIsNotNone(action_event)
+        self.assertEqual(action_event["tool"], "web_search")
+
+
+class TestParseAction(unittest.TestCase):
+    """Tests for action parsing from LLM responses."""
+
+    def setUp(self):
+        self.mock_engine = MagicMock()
+        self.mock_engine.stats = {"queries": 0}
+        self.mock_engine.llm_service = MagicMock()
+        self.mock_engine.retriever.get_sources.return_value = []
+        self.mock_engine.retriever.get_count.return_value = 0
+        agent = RAGAgent(self.mock_engine)
+        self.agent = agent
+
+    def test_parse_valid_action_with_arg(self):
+        """Parse action with argument."""
+        text = "Action: web_search[machine learning]"
+        result = self.agent.parse_action(text)
+        self.assertEqual(result, ("web_search", "machine learning"))
+
+    def test_parse_action_with_quotes(self):
+        """Parse action with quoted argument."""
+        text = 'Action: web_search["machine learning"]'
+        result = self.agent.parse_action(text)
+        self.assertEqual(result, ("web_search", "machine learning"))
+
+    def test_parse_action_no_argument(self):
+        """Parse action without argument."""
+        text = "Action: get_system_stats"
+        result = self.agent.parse_action(text)
+        self.assertEqual(result, ("get_system_stats", ""))
+
+    def test_parse_no_action_returns_none(self):
+        """No action returns None."""
+        text = "Thought: I should respond.\nFinal Answer: Hello."
+        result = self.agent.parse_action(text)
+        self.assertIsNone(result)
+
+
+class TestActionEvents(unittest.TestCase):
+    """Tests for action event emission."""
+
+    def setUp(self):
+        self.mock_engine = MagicMock()
+        self.mock_engine.stats = {"queries": 0}
+        self.mock_engine.llm_service = MagicMock()
+        self.mock_engine.llm_service.model = "test-model"
+        self.mock_engine.retriever.get_sources.return_value = []
+        self.mock_engine.retriever.get_count.return_value = 0
+        self.mock_engine.get_memory.return_value = MagicMock()
+        self.mock_engine.get_memory.return_value.get_active_context.return_value = ""
+        self.mock_engine.save_memory = MagicMock()
+
+    def test_action_and_observation_events(self):
+        """Web pipeline emits action and observation events."""
+        agent = RAGAgent(self.mock_engine)
+        
+        self.mock_engine.client.chat.completions.create.side_effect = [
+            make_mock_stream("Thought: Getting stats.\nAction: get_system_stats[]\nFinal Answer: CPU at 10%."),
+        ]
+        
+        events = list(agent.run_stream("how are system stats", session_id="test"))
         
         event_types = [e["event"] for e in events]
-        self.assertIn("thought", event_types)
         self.assertIn("action", event_types)
         self.assertIn("observation", event_types)
-        self.assertIn("answer_chunk", event_types)
-        self.assertIn("done", event_types)
-        
-        # Verify get_system_stats observation content
-        observation_event = next(e for e in events if e["event"] == "observation")
-        self.assertIn("CPU=12.5%", observation_event["output"])
-        self.assertIn("Total Indexed Documents=100", observation_event["output"])
-
-    def test_react_loop_search_knowledge_cache(self):
-        """Tests that duplicate searches hit the local query cache."""
-        self.engine._phase_expand.return_value = ["test query"]
-        self.engine._phase_retrieve.return_value = [{"text": "document secret", "score": 0.9, "source": "docs"}]
-        self.engine.compressor.compress.return_value = "compressed secret"
-        
-        # Response 1: Action: search
-        # Response 2: Action: search again with same arg
-        # Response 3: Final Answer
-        self.engine.client.chat.completions.create.side_effect = [
-            make_mock_stream("Thought: Searching database.\nAction: search_knowledge_base[secret_key]"),
-            make_mock_stream("Thought: Searching again.\nAction: search_knowledge_base[secret_key]"),
-            make_mock_stream("Thought: Done.\nFinal Answer: Password is secret.")
-        ]
-        
-        events = list(self.agent.run_stream("what is the secret password", session_id="test_sess"))
-        
-        # Verify search was only executed once (check engine retrieval calls)
-        self.assertEqual(self.engine._phase_retrieve.call_count, 1)
-
-    def test_react_loop_exhaustion_fallback(self):
-        """Tests that the agent falls back to final synthesis when loop iterations are exhausted."""
-        self.agent.max_iterations = 3
-        self.engine.retriever.get_count.return_value = 50
-        self.engine._phase_expand.return_value = ["query"]
-        self.engine._phase_retrieve.return_value = [{"text": "doc content", "score": 0.8, "source": "docs"}]
-        self.engine.compressor.compress.return_value = "compressed doc content"
-
-        # Mock completions to return 3 Action steps, forcing exhaustion, and a 4th call for synthesis
-        self.engine.client.chat.completions.create.side_effect = [
-            make_mock_stream("Thought: Need to look up stats.\nAction: get_system_stats[]"),
-            make_mock_stream("Thought: Need to search.\nAction: search_knowledge_base[query]"),
-            make_mock_stream("Thought: Still thinking.\nAction: get_system_stats[]"),
-            make_mock_stream("Based on my checks, here is the compiled response.")
-        ]
-        
-        events = list(self.agent.run_stream("check everything now", session_id="test_sess"))
-        
-        # Verify the "Iteration limit reached. Synthesizing..." thought was yielded
-        synthesis_thought = next((e for e in events if e["event"] == "thought" and "Iteration limit" in e["text"]), None)
-        self.assertIsNotNone(synthesis_thought)
-        
-        # Verify final response contains the synthesis output
-        done_event = next(e for e in events if e["event"] == "done")
-        self.assertEqual(done_event["response"], "Based on my checks, here is the compiled response.")
-
-    def test_parse_action_tolerant(self):
-        """Verify the parser tolerates spaces, quotes, and omitted brackets."""
-        # Double quotes
-        action = self.agent.parse_action('Action: search_knowledge_base["some query"]')
-        self.assertEqual(action, ("search_knowledge_base", "some query"))
-
-        # Single quotes
-        action = self.agent.parse_action("Action: search_knowledge_base['some query']")
-        self.assertEqual(action, ("search_knowledge_base", "some query"))
-
-        # Backticks
-        action = self.agent.parse_action("Action: search_knowledge_base[`some query`]")
-        self.assertEqual(action, ("search_knowledge_base", "some query"))
-
-        # Extra spacing inside brackets and around action
-        action = self.agent.parse_action("Action:   search_knowledge_base  [  some query  ]")
-        self.assertEqual(action, ("search_knowledge_base", "some query"))
-
-        # Omitted brackets
-        action = self.agent.parse_action("Action: get_system_stats")
-        self.assertEqual(action, ("get_system_stats", ""))
-
-        # Omitted brackets with spaces
-        action = self.agent.parse_action("Action: get_system_stats   ")
-        self.assertEqual(action, ("get_system_stats", ""))
-
-    @patch("psutil.cpu_percent")
-    @patch("psutil.virtual_memory")
-    def test_react_loop_self_correct(self, mock_vm, mock_cpu):
-        """Verify that agent detects malformed formatting and self-corrects using feedback."""
-        mock_cpu.return_value = 10.0
-        mock_vm.return_value.percent = 30.0
-        self.engine.retriever.get_count.return_value = 5
-        
-        # side_effect:
-        # 1. Malformed response (no Action or Final Answer prefix)
-        # 2. ReAct Action: get_system_stats[]
-        # 3. Final Answer
-        self.engine.client.chat.completions.create.side_effect = [
-            make_mock_stream("Thought: Let's do something without properly formatting it."),
-            make_mock_stream("Thought: Oops, I should use the correct format.\nAction: get_system_stats[]"),
-            make_mock_stream("Thought: I have the stats.\nFinal Answer: System CPU is 10.0%.")
-        ]
-        
-        events = list(self.agent.run_stream("tell me system stats", session_id="test_sess"))
-        
-        event_types = [e["event"] for e in events]
-        self.assertIn("observation", event_types)
-        
-        # Check that we received the formatting error observation
-        observation_events = [e for e in events if e["event"] == "observation"]
-        self.assertTrue(any("Error: Your response did not contain a valid ReAct Action" in obs["output"] for obs in observation_events))
-        
-        # Verify that get_system_stats was actually executed afterwards
-        action_events = [e for e in events if e["event"] == "action"]
-        self.assertTrue(any(act["tool"] == "get_system_stats" for act in action_events))
-        
-        # Verify the final answer
-        done_event = next(e for e in events if e["event"] == "done")
-        self.assertEqual(done_event["response"], "System CPU is 10.0%.")
 
 
 if __name__ == "__main__":
     unittest.main()
-

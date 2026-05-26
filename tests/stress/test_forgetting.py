@@ -16,10 +16,12 @@ import requests
 import json
 
 API_URL = "http://localhost:8000"
+API_KEY = os.getenv("RAG_API_KEY", "rag-admin-secret-key-2026")
+HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
 def check_server_online():
     try:
-        r = requests.get(f"{API_URL}/stats")
+        r = requests.get(f"{API_URL}/stats", headers=HEADERS)
         return r.status_code == 200
     except Exception:
         return False
@@ -44,7 +46,7 @@ def run_memory_stress_test():
         "session_id": session_ce,
         "mode": "context_engine"
     }
-    r = requests.post(f"{API_URL}/query", json=init_payload)
+    r = requests.post(f"{API_URL}/query", json=init_payload, headers=HEADERS)
     print(f"Turn 0 (Secret Injection) -> Response: {r.json().get('response', '').strip()}")
 
     filler_questions = [
@@ -70,7 +72,7 @@ def run_memory_stress_test():
             "session_id": session_ce,
             "mode": "context_engine"
         }
-        requests.post(f"{API_URL}/query", json=payload_filler)
+        requests.post(f"{API_URL}/query", json=payload_filler, headers=HEADERS)
         
         # 2. Ask if it still remembers the secret
         payload_test = {
@@ -78,7 +80,7 @@ def run_memory_stress_test():
             "session_id": session_ce,
             "mode": "context_engine"
         }
-        res = requests.post(f"{API_URL}/query", json=payload_test).json()
+        res = requests.post(f"{API_URL}/query", json=payload_test, headers=HEADERS).json()
         ans = res.get("response", "")
         tokens_used = res.get("stats", {}).get("budget_tracking", {}).get("memory_tokens_used", 0)
         
@@ -95,7 +97,7 @@ def run_memory_stress_test():
     print(f"\n[Simple RAG Mode] Starting session: {session_simple}")
     init_payload["session_id"] = session_simple
     init_payload["mode"] = "normal"
-    r = requests.post(f"{API_URL}/query", json=init_payload)
+    r = requests.post(f"{API_URL}/query", json=init_payload, headers=HEADERS)
     print(f"Turn 0 (Secret Injection) -> Response: {r.json().get('response', '').strip()}")
 
     # Test immediate recall
@@ -104,7 +106,7 @@ def run_memory_stress_test():
         "session_id": session_simple,
         "mode": "normal"
     }
-    res_simple = requests.post(f"{API_URL}/query", json=test_payload).json()
+    res_simple = requests.post(f"{API_URL}/query", json=test_payload, headers=HEADERS).json()
     ans_simple = res_simple.get("response", "")
     simple_recalled = "VaultKey-9988" in ans_simple
     print(f"Turn 1 (Test Recall) -> Recalled: {simple_recalled} | Answer: {ans_simple.strip()[:60]}...")
@@ -127,7 +129,7 @@ def run_knowledge_stress_test():
     print("\nInjecting needle document...")
     needle_text = "Verification code: The primary system administrator access code is 'OmegaAdmin-4433-System'."
     fd = {"file": ("needle.txt", needle_text, "text/plain")}
-    requests.post(f"{API_URL}/upload", files=fd)
+    requests.post(f"{API_URL}/upload", files=fd, headers=HEADERS)
 
     # 2. Inject noisy background documents (Haystack)
     print("Injecting noisy background documents...")
@@ -146,7 +148,7 @@ def run_knowledge_stress_test():
 
     for idx, noise in enumerate(noise_documents):
         fd_noise = {"file": (f"noise_{idx}.txt", noise, "text/plain")}
-        requests.post(f"{API_URL}/upload", files=fd_noise)
+        requests.post(f"{API_URL}/upload", files=fd_noise, headers=HEADERS)
 
     # Allow Weaviate search buffer time
     time.sleep(2)
@@ -161,7 +163,7 @@ def run_knowledge_stress_test():
         "mode": "context_engine",
         "session_id": f"needle-ce-{uuid.uuid4().hex[:6]}"
     }
-    res_ce = requests.post(f"{API_URL}/query", json=payload_ce).json()
+    res_ce = requests.post(f"{API_URL}/query", json=payload_ce, headers=HEADERS).json()
     ans_ce = res_ce.get("response", "")
     ce_recalled = "OmegaAdmin-4433-System" in ans_ce
     ce_score = res_ce.get("stats", {}).get("reranker_peak_score", 0)
@@ -176,7 +178,7 @@ def run_knowledge_stress_test():
         "mode": "normal",
         "session_id": f"needle-simple-{uuid.uuid4().hex[:6]}"
     }
-    res_simple = requests.post(f"{API_URL}/query", json=payload_simple).json()
+    res_simple = requests.post(f"{API_URL}/query", json=payload_simple, headers=HEADERS).json()
     ans_simple = res_simple.get("response", "")
     simple_recalled = "OmegaAdmin-4433-System" in ans_simple
     print(f"Simple RAG -> Recalled: {simple_recalled}")

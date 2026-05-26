@@ -7,9 +7,13 @@ into semantically cohesive document chunks.
 """
 
 import logging
-from typing import List
+from typing import List, Tuple
+import tiktoken
 
-from core.config import CHUNK_SIZE, CHUNK_OVERLAP
+from core.config import (
+    CHUNK_SIZE, CHUNK_OVERLAP, PARENT_CHUNK_SIZE,
+    CHILD_CHUNK_SIZE, CHILD_CHUNK_OVERLAP, TOKENIZER_ENCODING
+)
 
 logger = logging.getLogger("RAG.Splitter")
 
@@ -56,3 +60,109 @@ class RecursiveCharacterSplitter:
                 start = split_pos
 
         return chunks
+
+
+class ParentChildSplitter:
+    """
+    Splits text into parent chunks (~1500 tokens) and child chunks (~300 tokens)
+    with an overlap (~50 tokens).
+    """
+
+    def __init__(
+        self,
+        parent_size: int = PARENT_CHUNK_SIZE,
+        child_size: int = CHILD_CHUNK_SIZE,
+        child_overlap: int = CHILD_CHUNK_OVERLAP
+    ):
+        self.parent_size = parent_size
+        self.child_size = child_size
+        self.child_overlap = child_overlap
+        self.tokenizer = tiktoken.get_encoding(TOKENIZER_ENCODING)
+
+    def split_by_tokens(self, text: str, max_tokens: int, overlap_tokens: int = 0) -> List[str]:
+        """Helper to split string raw text into chunks of exact token counts."""
+        tokens = self.tokenizer.encode(text)
+        if not tokens:
+            return []
+        
+        chunks = []
+        start = 0
+        while start < len(tokens):
+            end = min(start + max_tokens, len(tokens))
+            chunk_tokens = tokens[start:end]
+            chunks.append(self.tokenizer.decode(chunk_tokens))
+            if end == len(tokens):
+                break
+            start = end - overlap_tokens
+            if start >= end:
+                start = end - 1
+        return chunks
+
+    def split_into_parents(self, text: str) -> List[str]:
+        """
+        Splits document text into parents of self.parent_size tokens,
+        respecting paragraph and sentence boundaries where possible.
+        """
+        paragraphs = text.split("\n\n")
+        parents = []
+        current_chunks = []
+        current_tokens = 0
+
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+            para_tokens = len(self.tokenizer.encode(para))
+            if para_tokens > self.parent_size:
+                # If we have accumulated previous paragraphs, save them
+                if current_chunks:
+                    parents.append("\n\n".join(current_chunks))
+                    current_chunks = []
+                    current_tokens = 0
+                
+                # Split large paragraph by sentences
+                sentences = para.split(". ")
+                for sent in sentences:
+                    sent = sent.strip()
+                    if not sent:
+                        continue
+                    sent_tokens = len(self.tokenizer.encode(sent))
+                    if sent_tokens > self.parent_size:
+                        # Split sentence directly by tokens
+                        token_chunks = self.split_by_tokens(sent, self.parent_size, overlap_tokens=100)
+                        parents.extend(token_chunks)
+                    else:
+                        if current_tokens + sent_tokens > self.parent_size:
+                            parents.append(". ".join(current_chunks) + ".")
+                            current_chunks = [sent]
+                            current_tokens = sent_tokens
+                        else:
+                            current_chunks.append(sent)
+                            current_tokens += sent_tokens
+            else:
+                if current_tokens + para_tokens > self.parent_size:
+                    parents.append("\n\n".join(current_chunks))
+                    current_chunks = [para]
+                    current_tokens = para_tokens
+                else:
+                    current_chunks.append(para)
+                    current_tokens += para_tokens
+
+        if current_chunks:
+            parents.append("\n\n".join(current_chunks))
+        return parents
+
+    def split_text(self, text: str) -> List[Tuple[str, List[str]]]:
+        """
+        Splits raw text into a list of (parent_text, child_texts) pairs.
+        """
+        if not text or not text.strip():
+            return []
+
+        parents = self.split_into_parents(text)
+        pairs = []
+        for parent in parents:
+            children = self.split_by_tokens(parent, self.child_size, overlap_tokens=self.child_overlap)
+            if children:
+                pairs.append((parent, children))
+        return pairs

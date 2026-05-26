@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Geist+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <link rel="stylesheet" href="/static/styles.css">
@@ -22,13 +23,22 @@
         </div>
         <div class="status-strip">
             <span class="status-indicator">
-                <span class="status-dot online"></span>
-                Status: <strong>Online</strong>
+                <span id="status-dot" class="status-dot online"></span>
+                Status: <strong id="status-text">Online</strong>
             </span>
             <span class="status-item">Indexed docs: <strong id="knowledge-count" class="glow-value">0</strong></span>
             <div class="session-badge-container" style="display: inline-flex; align-items: center; gap: 5px;">
                 <span id="session-tag" class="session-badge">SID: ...</span>
                 <button type="button" id="reset-session-btn" class="hud-mini-btn reset-session-btn" title="Reset session thread">Reset</button>
+            </div>
+            <div class="api-key-container" style="display: inline-flex; align-items: center; gap: 5px; position: relative;">
+                <input type="password" id="api-key-input" class="hud-mini-btn" placeholder="API Key" style="width: 130px; font-size: 0.75rem; text-align: left; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 3px 24px 3px 8px; border-radius: 4px; transition: all 0.2s ease-in-out;" title="Enter RAG API Key">
+                <button type="button" id="toggle-key-visibility" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; width: 14px; height: 14px;" title="Toggle key visibility">
+                    <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px; transition: color 0.2s;">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                </button>
             </div>
             
             <!-- Context budget -->
@@ -98,6 +108,11 @@
                 <span class="label-text">Agent session</span>
                 <div class="mode-select-container">
                     <span class="mode-badge"><span class="mode-badge-dot pulse"></span>Agent ready</span>
+                    <select id="pipeline-mode-select" class="mode-select" title="Select pipeline mode">
+                        <option value="agentic">Agentic AI</option>
+                        <option value="context_engine">Context Engine</option>
+                        <option value="normal">Simple RAG</option>
+                    </select>
                 </div>
             </div>
             <div class="agent-briefing">

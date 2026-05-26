@@ -8,9 +8,9 @@ This system is a "Retrieval-Augmented Generation" (RAG) pipeline. In plain Engli
 
 ## 📖 Beginner Guides
 If you want to understand how this code works without getting lost in technical jargon, start by reading these guides (located in the documentation artifacts):
-1. **[Terminology Guide](rag_explanation.md#2-core-concepts-for-beginners)**: Translates heavy AI jargon into simple concepts.
-2. **[File-by-File Guide](rag_explanation.md#5-directory-structure--file-map)**: Explains what every Python file does and why it exists.
-3. **[Code Workflow](rag_explanation.md#7-how-questions-are-answered-query-flow)**: Traces exactly what happens behind the scenes when a user asks a question.
+1. **[Terminology Guide](docs/rag_explanation.md#2-core-concepts-for-beginners)**: Translates heavy AI jargon into simple concepts.
+2. **[File-by-File Guide](docs/rag_explanation.md#5-directory-structure--file-map)**: Explains what every Python file does and why it exists.
+3. **[Code Workflow](docs/rag_explanation.md#7-how-questions-are-answered-query-flow)**: Traces exactly what happens behind the scenes when a user asks a question.
 
 ---
 
@@ -45,6 +45,13 @@ When the server starts successfully, open your web browser and go to:
 **http://localhost:8000**
 
 You will see the user interface where you can upload documents and start asking questions!
+
+### 5. Ingest Pre-Populated Datasets (Optional)
+To ingest the customer, product, order, and order item CSV files from the `data/` folder into your Weaviate RAG knowledge base:
+```bash
+python -m scratch.load_csv_data
+```
+This utility will parse the CSV data, generate embeddings, and load them into Weaviate.
 
 ---
 

@@ -27,7 +27,9 @@ if __name__ == "__main__":
     server_ready = False
     for i in range(max_retries):
         try:
-            with urllib.request.urlopen("http://localhost:8000/stats", timeout=2) as response:
+            req = urllib.request.Request("http://localhost:8000/stats")
+            req.add_header("Authorization", "Bearer rag-admin-secret-key-2026")
+            with urllib.request.urlopen(req, timeout=2) as response:
                 if response.status == 200:
                     print("Server is ready!")
                     server_ready = True
@@ -45,6 +47,7 @@ if __name__ == "__main__":
     try:
         # 2. Run integration tests
         run_script("tests/integration/verify_api.py")
+        run_script("tests/integration/test_upload.py")
         run_script("tests/integration/test_dual_channel.py")
     finally:
         print("Shutting down server...")

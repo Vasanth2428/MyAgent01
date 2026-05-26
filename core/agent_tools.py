@@ -4,6 +4,9 @@ RAG AGENT - TOOL DEFINITIONS & REGISTRY
 ================================================================================
 Declarative tool definitions and tool registry for ReAct agent.
 Enables runtime tool registration, validation, and metrics collection.
+
+NOTE: Retrieval is NOT a tool here - it's infrastructure that happens 
+before agent execution in the retrieval-first architecture.
 """
 
 from dataclasses import dataclass, field
@@ -16,7 +19,6 @@ logger = logging.getLogger("RAG.ToolRegistry")
 
 class ToolType(Enum):
     """Categorizes tools for routing and timeout management"""
-    KNOWLEDGE_BASE = "knowledge_base"
     WEB = "web"
     SYSTEM = "system"
     CHAT = "chat"
@@ -53,21 +55,13 @@ class ToolRegistry:
         self._register_default_tools()
 
     def _register_default_tools(self):
-        """Register built-in tools"""
-        self.register(ToolDefinition(
-            name="search_knowledge_base",
-            description="Searches the document database and returns compressed relevant segments. Use this when the query asks about technical facts, documentation, or uploaded files.",
-            tool_type=ToolType.KNOWLEDGE_BASE,
-            required_args=["query"],
-            timeout_seconds=15,
-            retry_count=2,
-            max_arg_length=500,
-            example="search_knowledge_base[Python async patterns]"
-        ))
-
+        """Register built-in tools - NO KNOWLEDGE_BASE TOOL here!
+        
+        Retrieval is infrastructure, not a tool choice.
+        """
         self.register(ToolDefinition(
             name="web_search",
-            description="Searches the web for public facts, news, and details using DuckDuckGo. Use this to find live web data or cross-reference private database findings with public facts.",
+            description="Searches the web for public facts, news, and details using DuckDuckGo. Use this to find live web data.",
             tool_type=ToolType.WEB,
             required_args=["query"],
             timeout_seconds=10,
@@ -122,16 +116,8 @@ class ToolRegistry:
             example="get_current_time[]"
         ))
 
-        self.register(ToolDefinition(
-            name="direct_response",
-            description="Use this to respond directly to the user for general greetings, chit-chat, or if you can answer using the conversation history alone.",
-            tool_type=ToolType.CHAT,
-            required_args=["response"],
-            timeout_seconds=5,
-            retry_count=0,
-            max_arg_length=2000,
-            example="direct_response[Hello! I'm ready to help.]"
-        ))
+        # NOTE: direct_response is ONLY for casual chat mode
+        # It should NOT be used to bypass grounding in STRICT_RAG pipeline
 
     def register(self, tool_def: ToolDefinition) -> None:
         """Register a new tool"""
@@ -149,7 +135,8 @@ class ToolRegistry:
         """Get all registered tools"""
         return list(self.tools.values())
 
-    def generate_system_prompt(self, excluded_types: Optional[List[ToolType]] = None) -> str:
+    def generate_system_prompt(self, excluded_types: Optional[List[ToolType]] = None,
+                                route: str = None) -> str:
         """Generate system prompt from tool registry, optionally filtering tool types."""
         excluded_types = excluded_types or []
         filtered_tools = [t for t in self.list_tools() if t.tool_type not in excluded_types]
@@ -159,13 +146,20 @@ class ToolRegistry:
             for i, tool in enumerate(filtered_tools)
         ])
         
-        # Customize synthesis instruction dynamically
-        if ToolType.WEB in excluded_types:
-            synthesis_instruction = "You must ONLY use the local knowledge base tools. Do NOT attempt to use web search or web fetch."
-        elif ToolType.KNOWLEDGE_BASE in excluded_types:
-            synthesis_instruction = "You must ONLY use live web search tools. Do NOT attempt to search the local knowledge base."
+        # Customize synthesis instruction based on route
+        if route == "STRICT_RAG":
+            synthesis_instruction = (
+                "CRITICAL: The retrieval phase has already completed. "
+                "You are given pre-retrieved context. Synthesize the answer "
+                "using ONLY that context. Do not attempt additional retrieval - "
+                "retrieval is infrastructure, not a tool choice."
+            )
+        elif route == "WEB_AGENT":
+            synthesis_instruction = "You must ONLY use live web search tools."
+        elif ToolType.WEB in excluded_types:
+            synthesis_instruction = "Note: Web tools are excluded. Local knowledge base retrieval happens as infrastructure before agent execution."
         else:
-            synthesis_instruction = "You should cross-reference findings from the local knowledge base with public web search results to synthesize comprehensive, grounded insights."
+            synthesis_instruction = "Use web tools to find live public information. Note: Local knowledge base retrieval is NOT a tool - it happens as infrastructure before agent execution."
         
         return f"""You are an advanced RAG Assistant with access to tools to help answer user questions.
 You must solve the user's request step-by-step using a ReAct loop.
@@ -183,7 +177,7 @@ Available tools:
 
 Strict rules:
 1. ONLY call one tool at a time.
-2. You MUST use the exact format "Action: tool_name[arguments]". For example: "Action: search_knowledge_base[database password]" or "Action: web_search[artificial intelligence]".
+2. You MUST use the exact format "Action: tool_name[arguments]".
 3. Do NOT put quotes or backticks around tool arguments.
 4. If the tools do not return enough relevant information, state that you do not know in the Final Answer.
 5. {synthesis_instruction}"""
