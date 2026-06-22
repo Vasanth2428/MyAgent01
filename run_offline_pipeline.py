@@ -38,41 +38,47 @@ class PredefinedSupervisor:
         
         if self.call_count == 1:
             return SupervisorDecision(
-                plan=["Research UI trends", "Scaffold smart_home app", "Write backend", "Write frontend", "Review and Synthesize"],
+                plan=["Research UI trends", "Scaffold smart_home app", "Write tests", "Write backend", "Write frontend", "Review and Synthesize"],
                 next_agent="web_worker",
                 current_task="Search for premium smart home dashboard UX/UI design trends and layout guidelines"
             )
         elif self.call_count == 2:
             return SupervisorDecision(
-                plan=["Scaffold smart_home app", "Write backend", "Write frontend", "Review and Synthesize"],
+                plan=["Scaffold smart_home app", "Write tests", "Write backend", "Write frontend", "Review and Synthesize"],
                 next_agent="scraper_worker",
                 current_task="Scrape energy saving statistics from https://example.com/smarthome"
             )
         elif self.call_count == 3:
             return SupervisorDecision(
-                plan=["Scaffold smart_home app", "Write backend", "Write frontend", "Review and Synthesize"],
+                plan=["Scaffold smart_home app", "Write tests", "Write backend", "Write frontend", "Review and Synthesize"],
                 next_agent="coding_worker",
                 current_task="Scaffold the React application named 'smart_home' in `./workspace`"
             )
         elif self.call_count == 4:
             return SupervisorDecision(
-                plan=["Write backend", "Write frontend", "Review and Synthesize"],
+                plan=["Write tests", "Write backend", "Write frontend", "Review and Synthesize"],
                 next_agent="coding_worker",
-                current_task="Create backend device manager main.py under `smart_home/backend/` using SQLite"
+                current_task="Create unit test cases for backend device manager in `smart_home/backend/test_main.py` using pytest"
             )
         elif self.call_count == 5:
             return SupervisorDecision(
-                plan=["Write frontend", "Review and Synthesize"],
-                next_agent="code_critic_worker",
-                current_task="Review backend code syntax and design completeness for `smart_home/backend/main.py`"
+                plan=["Write backend", "Write frontend", "Review and Synthesize"],
+                next_agent="coding_worker",
+                current_task="Create backend device manager main.py under `smart_home/backend/` using SQLite and verify it using pytest on `smart_home/backend/test_main.py`"
             )
         elif self.call_count == 6:
+            return SupervisorDecision(
+                plan=["Write frontend", "Review and Synthesize"],
+                next_agent="code_critic_worker",
+                current_task="Review backend code syntax and design completeness for `smart_home/backend/main.py` and its test suite"
+            )
+        elif self.call_count == 7:
             return SupervisorDecision(
                 plan=["Write frontend", "Review and Synthesize"],
                 next_agent="coding_worker",
                 current_task="Create premium frontend controls in `smart_home/src/App.jsx` and styling in `smart_home/src/App.css` using glassmorphism"
             )
-        elif self.call_count == 7:
+        elif self.call_count == 8:
             return SupervisorDecision(
                 plan=["Review and Synthesize"],
                 next_agent="critic_worker",
@@ -91,7 +97,7 @@ class PredefinedCodingWorker:
         task = ""
         for m in reversed(messages):
             if isinstance(m, HumanMessage):
-                task = m.content
+                task = m.content.split("\n\nBlackboard Findings:")[0]
                 break
         
         system_prompts = [m.content for m in messages if isinstance(m, SystemMessage)]
@@ -117,7 +123,7 @@ class PredefinedCodingWorker:
             elif isinstance(m, ToolMessage):
                 tool_results_history.append(m.content)
 
-        print(f"[MOCK CODING WORKER] Task: '{task[:40]}...' | Phase: {current_phase} | Tool History: {tool_calls_history}")
+        print(f"[MOCK CODOCK WORKER] Task: '{task[:40]}...' | Phase: {current_phase} | Tool History: {tool_calls_history}")
 
         if "Scaffold" in task:
             if "scaffold_react_app" in tool_calls_history:
@@ -132,7 +138,65 @@ class PredefinedCodingWorker:
                 }]
             )
             
-        elif "backend" in task:
+        elif "unit test" in task or "test cases" in task:
+            create_count = tool_calls_history.count("create_files")
+            compile_count = tool_calls_history.count("run_safe_commands")
+            
+            if current_phase == "PLANNING":
+                blocked_tool_calls.append("PLANNING_WRITE_BLOCKED")
+                return AIMessage(
+                    content="I will try to create backend/test_main.py in PLANNING phase.",
+                    tool_calls=[{
+                        "name": "create_files",
+                        "args": {
+                            "filepath": "smart_home/backend/test_main.py",
+                            "content": (
+                                "from fastapi.testclient import TestClient\n"
+                                "from smart_home.backend.main import app\n\n"
+                                "client = TestClient(app)\n\n"
+                                "def test_read_devices():\n"
+                                "    response = client.get('/api/devices')\n"
+                                "    assert response.status_code == 200\n"
+                                "    assert len(response.json()) > 0\n"
+                            )
+                        },
+                        "id": f"blocked_create_test_{len(tool_calls_history)}"
+                    }]
+                )
+            elif current_phase in ("EXECUTION", "VERIFICATION"):
+                if create_count < 3:  # 2 blocked in planning
+                    return AIMessage(
+                        content="Phase is EXECUTION. Writing test_main.py backend test cases.",
+                        tool_calls=[{
+                            "name": "create_files",
+                            "args": {
+                                "filepath": "smart_home/backend/test_main.py",
+                                "content": (
+                                    "from fastapi.testclient import TestClient\n"
+                                    "from smart_home.backend.main import app\n\n"
+                                    "client = TestClient(app)\n\n"
+                                    "def test_read_devices():\n"
+                                    "    response = client.get('/api/devices')\n"
+                                    "    assert response.status_code == 200\n"
+                                    "    assert len(response.json()) > 0\n"
+                                )
+                            },
+                            "id": "write_test_main"
+                        }]
+                    )
+                elif compile_count == 0:
+                    return AIMessage(
+                        content="Running pytest on the test suite to verify initial status.",
+                        tool_calls=[{
+                            "name": "run_safe_commands",
+                            "args": {"command": "pytest smart_home/backend/test_main.py"},
+                            "id": "run_pytest_test_suite"
+                        }]
+                    )
+                else:
+                    return AIMessage(content="Backend unit tests have been written and verified.")
+
+        elif "backend" in task or "main.py" in task:
             create_count = tool_calls_history.count("create_files")
             compile_count = tool_calls_history.count("run_safe_commands")
             
@@ -149,8 +213,8 @@ class PredefinedCodingWorker:
                         "id": f"blocked_create_{len(tool_calls_history)}"
                     }]
                 )
-            elif current_phase == "EXECUTION":
-                if create_count < 3: # 2 blocked in PLANNING.
+            elif current_phase in ("EXECUTION", "VERIFICATION"):
+                if create_count < 3:  # 2 blocked in planning of this task
                     bad_code = (
                         "from fastapi import FastAPI\n"
                         "app = FastAPI()\n\n"
@@ -199,10 +263,17 @@ class PredefinedCodingWorker:
                             "id": "run_compile_good"
                         }]
                     )
+                elif compile_count == 1:
+                    return AIMessage(
+                        content="Running pytest to verify code against test cases.",
+                        tool_calls=[{
+                            "name": "run_safe_commands",
+                            "args": {"command": "pytest smart_home/backend/test_main.py"},
+                            "id": "run_pytest_verify"
+                        }]
+                    )
                 else:
-                    return AIMessage(content="Backend logic is complete and successfully verified.")
-            elif current_phase == "VERIFICATION":
-                return AIMessage(content="Verification successful. Backend syntax check passed.")
+                    return AIMessage(content="Backend logic is complete and successfully verified against unit tests.")
                 
         elif "frontend" in task:
             modify_count = tool_calls_history.count("modify_files")
@@ -257,7 +328,7 @@ class PredefinedCodingWorker:
                             }
                         ]
                     )
-                elif compile_count == 0:
+                elif compile_count == 3:  # 1 from test step, 2 from backend step
                     return AIMessage(
                         content="Verifying frontend build.",
                         tool_calls=[{
@@ -394,6 +465,8 @@ def main():
         command = args.get("command", "")
         if "npm run build" in command:
             return "[Command exited with status 0]\n✓ built in 150ms"
+        if "pytest" in command:
+            return "[Command exited with status 0]\n3 tests passed successfully."
         return original_run_safe.invoke(args)
         
     mock_run_safe_tool = MagicMock()
@@ -414,6 +487,15 @@ def main():
     print("==============================================================")
     
     # 1. Assert file creation and content accuracy
+    backend_test = os.path.join(workspace_smart_home, "backend", "test_main.py")
+    assert os.path.exists(backend_test), "Assertion failed: smart_home/backend/test_main.py was not created!"
+    print("[PASSED] backend/test_main.py file created successfully.")
+    
+    with open(backend_test, "r", encoding="utf-8") as f:
+        test_content = f.read()
+    assert "test_read_devices" in test_content, "Assertion failed: test_main.py does not contain test_read_devices case!"
+    print("[PASSED] backend/test_main.py has correct unit test code (TDD verified).")
+
     backend_main = os.path.join(workspace_smart_home, "backend", "main.py")
     assert os.path.exists(backend_main), "Assertion failed: smart_home/backend/main.py was not created!"
     print("[PASSED] backend/main.py file created successfully.")

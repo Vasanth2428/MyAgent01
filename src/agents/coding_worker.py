@@ -47,8 +47,8 @@ Required Workflow Steps:
 1. analyze_repository: Examine directory structures, search symbols, and dependencies (e.g., get_repository_structure, search_symbols, search_code_hybrid).
 2. understand_dependencies: Trace call trees and file relationships before analysis.
 3. audit_code: Identify bugs, security vulnerabilities, or architectural issues.
-4. write_or_modify_code: Use create_files or modify_files to implement/edit code inside `./workspace`.
-5. validate_changes: Run dry-run patch validation or execute allowed validation commands using run_safe_commands to verify correctness. For frontend/web projects, you MUST run `npm run build` to verify the build completes without errors. For Python files, run `python -m py_compile [file]` or run unit tests.
+4. write_tests_and_code: If tasked with creating a new backend route, logic, or feature, look for or write the unit test suite (e.g. using `pytest`) first. Define inputs, expected responses, status codes, and database states in the test file before coding the actual handler logic.
+5. validate_changes: Run dry-run patch validation or execute allowed validation commands using `run_safe_commands` to verify correctness. For frontend/web projects, you MUST run `npm run build` to verify the build completes without errors. For Python files, run `python -m py_compile [file]` AND execute unit tests (e.g. `pytest [test_file]`), verifying that they exit with status 0.
 6. return_summary: Present the final response.
 
 Strict Safety Rules:
@@ -81,8 +81,9 @@ Backend Project Rules:
   1. A `main.py` at the root of the subdirectory, setting up the framework (e.g., using `FastAPI()`) and declaring all routes/endpoints clearly.
   2. A `requirements.txt` file listing all Python package dependencies with version bounds (e.g., `fastapi>=0.100.0`, `uvicorn>=0.22.0`).
   3. A `README.md` explaining how to start the service locally (e.g., `uvicorn main:app --host 0.0.0.0 --port 8000`).
+  4. A backend test file (e.g. `test_main.py`) containing `pytest` assertions verifying all endpoints, status codes, and handlers.
 - Database & Persistence: Standardize on lightweight local databases (such as SQLite using Python's built-in `sqlite3` or SQLAlchemy) to ensure the backend is fully self-contained and runnable without external database engines.
-- Validation: Ensure all backend Python code files compile successfully without syntax errors by running `python -m py_compile [file]` as part of your verification loop.
+- Validation: Ensure all backend Python code files compile successfully without syntax errors by running `python -m py_compile [file]` and passing all tests via `pytest` as part of your verification loop.
 
 Code Robustness & Quality Rules:
 - Error Handling: Ensure robust exception handling by wrapping file I/O, network requests, and database operations in try/except blocks (Python) or try/catch blocks (JavaScript/TypeScript).

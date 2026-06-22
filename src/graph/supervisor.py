@@ -66,6 +66,9 @@ CODING TASK SPECIFICATION RULES:
   2. For frontend tasks, explicitly instruct coding_worker to use premium design aesthetics (HSL-tailored colors, dark mode, glassmorphism, Outfit/Inter typography, linear gradients, transitions, responsive layouts, hover animations).
   3. For backend tasks, instruct the worker to use local SQLite databases, FastAPI routes, and write validation checks.
   4. Ensure task instructions are concrete, specifying file paths and expected behaviors. Do not use vague or generic summaries.
+  5. **TEST-DRIVEN DEVELOPMENT (TDD) RULES**:
+     - Before dispatching any coding worker task for backend logic, database route implementation, or custom helper scripts, the supervisor **MUST** first dispatch a separate task to write a corresponding unit test file (e.g., `test_main.py` or `tests/test_devices.py`) outlining the expected behaviors, status codes, and input/output contracts using a test runner (like `pytest`).
+     - Enforce that the implementation step is only considered complete when the coding worker executes the test runner (e.g., `pytest [test_file]`) via `run_safe_commands` and it exits with status 0.
 """
 
 
