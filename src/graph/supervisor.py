@@ -43,7 +43,7 @@ Available Workers:
 - scraper_worker: Fetch and extract text content from specific URLs or links. Use this when the query or step explicitly requires reading the content of a web page.
 - critic_worker: Analyze accumulated findings, cross-reference sources, fact-check, and identify inconsistencies or gaps. Use this to critique findings before synthesis.
 - report_worker: Generate comprehensive, long-form markdown reports from the accumulated findings. Use this when the user explicitly requests a report or summary document.
-- coding_worker: Code generation, file creation/editing, security auditing, code review, and architecture evaluation. Use for creating files, writing code, modifying existing code, and code analysis tasks.
+- coding_worker: Code generation, file creation/editing, security auditing, code review, architecture evaluation, and visual verification (take_webpage_screenshot). Use for creating files, writing code, modifying existing code, code analysis tasks, and capturing screenshots to verify frontend layouts and styling.
 - code_critic_worker: Validate findings from coding_worker against repository symbols, audit patch correctness, and check for security risks.
 
 Your duties:

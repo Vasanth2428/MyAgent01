@@ -16,12 +16,16 @@ _PROVIDER_DEFAULT_MODELS = {
     "google_genai": "gemini-2.5-flash",
     "openai": "gpt-4o-mini",
     "cerebras": "gpt-oss-120b",
+    "local": "qwen2.5:7b",
 }
 
 _PROVIDER_ALIASES = {
     "gemini": "google_genai",
     "google": "google_genai",
     "google-genai": "google_genai",
+    "ollama": "local",
+    "llama_cpp": "local",
+    "llama-cpp": "local",
 }
 
 
@@ -126,6 +130,20 @@ def _create_base_model(
         api_key = _first_env((*api_key_envs, "GOOGLE_API_KEY", "GEMINI_API_KEY"))
         return ChatGoogleGenerativeAI(api_key=api_key, **common)
 
+    if provider == "local":
+        from langchain_openai import ChatOpenAI
+        from src.core.config import LOCAL_LLM_API_BASE, LOCAL_LLM_MODEL
+
+        resolved_model = model
+        # If using standard default models or empty, map to LOCAL_LLM_MODEL
+        if model in _PROVIDER_DEFAULT_MODELS.values() or not model or model == "llama-3.1-8b-instant" or model == "llama-3.3-70b-versatile":
+            resolved_model = os.getenv("LOCAL_LLM_MODEL", LOCAL_LLM_MODEL)
+
+        common["model"] = resolved_model
+        common["base_url"] = os.getenv("LOCAL_LLM_API_BASE", LOCAL_LLM_API_BASE)
+        api_key = _first_env((*api_key_envs, "LOCAL_LLM_API_KEY", "OPENAI_API_KEY")) or "local-no-key"
+        return ChatOpenAI(api_key=api_key, **common)
+
     if provider in {"openai", "cerebras"}:
         from langchain_openai import ChatOpenAI
 
@@ -142,7 +160,7 @@ def _create_base_model(
 
     raise ValueError(
         f"Unsupported LLM provider '{provider}'. "
-        "Supported providers: groq, google_genai, openai, cerebras."
+        "Supported providers: groq, google_genai, openai, cerebras, local."
     )
 
 

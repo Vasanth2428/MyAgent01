@@ -36,6 +36,27 @@ class PredefinedSupervisor:
         from src.graph.supervisor import SupervisorDecision
         print(f"[MOCK SUPERVISOR] invoke count: {self.call_count}")
         
+        has_critic_retry = False
+        for msg in messages:
+            if "RETRY_REQUIRED" in getattr(msg, "content", ""):
+                has_critic_retry = True
+                break
+                
+        if has_critic_retry:
+            # The critic failed and triggered rollback.
+            # Assert that the modified files (like smart_home/backend/main.py) were rolled back / deleted!
+            backend_main_file = os.path.realpath(os.path.join(os.path.dirname(__file__), "workspace", "smart_home", "backend", "main.py"))
+            assert not os.path.exists(backend_main_file), "Assertion failed: Rollback did not delete modified file on validation failure!"
+            print("[PASSED] Critique Rollback verified: modified file was successfully rolled back.")
+            
+            # Decrement call_count so that the future steps align!
+            self.call_count -= 1
+            return SupervisorDecision(
+                plan=["Write backend", "Write frontend", "Review and Synthesize"],
+                next_agent="coding_worker",
+                current_task="Address specific issues found by the code critic: database table does not exist."
+            )
+            
         if self.call_count == 1:
             return SupervisorDecision(
                 plan=["Research UI trends", "Scaffold smart_home app", "Write tests", "Write backend", "Write frontend", "Review and Synthesize"],
@@ -196,6 +217,64 @@ class PredefinedCodingWorker:
                 else:
                     return AIMessage(content="Backend unit tests have been written and verified.")
 
+        elif "Address specific issues" in task or "CRITIC RETRY" in task:
+            create_count = tool_calls_history.count("create_files")
+            compile_count = tool_calls_history.count("run_safe_commands")
+            
+            if current_phase == "PLANNING":
+                blocked_tool_calls.append("PLANNING_WRITE_BLOCKED")
+                return AIMessage(
+                    content="I will try to create backend/main.py in PLANNING phase.",
+                    tool_calls=[{
+                        "name": "create_files",
+                        "args": {
+                            "filepath": "smart_home/backend/main.py",
+                            "content": "from fastapi import FastAPI\napp = FastAPI()"
+                        },
+                        "id": f"blocked_create_{len(tool_calls_history)}"
+                    }]
+                )
+            elif current_phase in ("EXECUTION", "VERIFICATION"):
+                if create_count < 3:
+                    good_code = (
+                        "from fastapi import FastAPI\n"
+                        "app = FastAPI()\n\n"
+                        "@app.get('/api/devices')\n"
+                        "def get_devices():\n"
+                        "    return [{'id': 1, 'name': 'Thermostat', 'status': 'on'}]\n"
+                    )
+                    return AIMessage(
+                        content="Phase is EXECUTION. Writing good backend logic.",
+                        tool_calls=[{
+                            "name": "create_files",
+                            "args": {
+                                "filepath": "smart_home/backend/main.py",
+                                "content": good_code
+                            },
+                            "id": "write_good_backend_retry"
+                        }]
+                    )
+                elif compile_count == 0:
+                    return AIMessage(
+                        content="Verifying syntax of main.py using compiler.",
+                        tool_calls=[{
+                            "name": "run_safe_commands",
+                            "args": {"command": "python -m py_compile smart_home/backend/main.py"},
+                            "id": "run_compile_good"
+                        }]
+                    )
+                elif compile_count == 1:
+                    return AIMessage(
+                        content="Running pytest to verify code against test cases.",
+                        tool_calls=[{
+                            "name": "run_safe_commands",
+                            "args": {"command": "pytest smart_home/backend/test_main.py"},
+                            "id": "run_pytest_verify"
+                        }]
+                    )
+                else:
+                    return AIMessage(content="Backend logic is complete and successfully verified against unit tests.")
+
         elif "backend" in task or "main.py" in task:
             create_count = tool_calls_history.count("create_files")
             compile_count = tool_calls_history.count("run_safe_commands")
@@ -346,6 +425,7 @@ class PredefinedCodingWorker:
 
 supervisor_mock_instance = PredefinedSupervisor()
 coding_worker_mock_instance = PredefinedCodingWorker()
+critic_call_count = 0
 
 def mock_build_model_with_fallback(
     role: str,
@@ -365,11 +445,31 @@ def mock_build_model_with_fallback(
         mock_model.invoke.side_effect = supervisor_mock_instance.invoke
     elif role == "coding_worker":
         mock_model.invoke.side_effect = coding_worker_mock_instance.invoke
-    elif role == "code_critic_worker":
-        mock_model.invoke.return_value = AIMessage(
-            content="Code review for smart_home/backend/main.py: Checked syntax and SQL schemas. All clean.",
-            name="code_critic_worker"
-        )
+    elif role in ("code_critic", "code_critic_worker"):
+        from src.agents.code_critic_worker import CriticReport, CriticFinding
+        
+        global critic_call_count
+        critic_call_count += 1
+        
+        if critic_call_count == 1:
+            print("[MOCK LLM] Code critic returning validation failure (to test rollback/retry).")
+            mock_model.invoke.return_value = CriticReport(
+                valid=False,
+                findings=[CriticFinding(
+                    issue_type="hallucinated_symbol",
+                    file_location="smart_home/backend/main.py",
+                    details="The database file path should use sales.db.",
+                    severity="critical"
+                )],
+                criticism_summary="Found critical symbol hallucination."
+            )
+        else:
+            print("[MOCK LLM] Code critic returning validation success.")
+            mock_model.invoke.return_value = CriticReport(
+                valid=True,
+                findings=[],
+                criticism_summary="All code looks correct and fully validated."
+            )
     elif role == "critic_worker":
         mock_model.invoke.return_value = AIMessage(
             content="Design audit: Typography and glassmorphic aesthetics are correctly integrated.",
@@ -473,6 +573,12 @@ def main():
     mock_run_safe_tool.invoke.side_effect = mock_run_safe
     tools_map["run_safe_commands"] = mock_run_safe_tool
     
+    # Mock take_webpage_screenshot to simulate visual verification offline
+    original_screenshot = tools_map.get("take_webpage_screenshot")
+    mock_screenshot_tool = MagicMock()
+    mock_screenshot_tool.invoke.return_value = "Success: Screenshot captured and saved to 'screenshot.png'."
+    tools_map["take_webpage_screenshot"] = mock_screenshot_tool
+    
     with patch("src.agents.coding_worker.get_retrieval_service") as mock_get_service:
          
          # Mock retrieval service in coding worker
@@ -525,6 +631,22 @@ def main():
     # 4. Assert Pipeline routing completeness
     assert synthesized_successfully, "Assertion failed: Synthesizer was not executed to finalize output!"
     print("[PASSED] Multi-agent routing loop traversed all required workers and synthesized successfully.")
+    
+    # 5. Assert Whitespace-Tolerant Patch Matching
+    print("\nVerifying whitespace-tolerant patch application...")
+    from src.tools.patch_tools import apply_patch
+    original_text = "def hello():\n    print(  'Hello World'  )\n    return True\n"
+    patch_text = """--- a/hello.py
++++ b/hello.py
+@@ -1,3 +1,3 @@
+ def hello():
+-    print( 'Hello World' )
++    print('Hello, Space!')
+     return True
+"""
+    patched = apply_patch(original_text, patch_text)
+    assert "print('Hello, Space!')" in patched, "Assertion failed: Whitespace-tolerant patch application failed!"
+    print("[PASSED] Whitespace-tolerant patch application verified.")
     
     # Output final answer
     print("\nFinal Synthesized Answer:")

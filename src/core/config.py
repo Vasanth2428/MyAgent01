@@ -20,6 +20,10 @@ LLM_MODEL = "llama-3.1-8b-instant"
 LLM_TEMPERATURE = 0.1
 CONTEXT_WINDOW_LIMIT = 131072
 
+# --- Local LLM Config ---
+LOCAL_LLM_API_BASE = os.getenv("LOCAL_LLM_API_BASE", "http://localhost:11434/v1")
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "qwen2.5:7b")
+
 # --- Embedding ---
 # EMBEDDING_MODEL = "all-MiniLM-L6-v2" (No longer used directly; server-side text2vec-huggingface is used instead)
 
@@ -33,7 +37,9 @@ MAX_CANDIDATES = 12
 DEFAULT_TOP_K = 5
 
 # --- Token Budgets ---
-TOTAL_CONTEXT_BUDGET = int(os.getenv("RAG_TOTAL_CONTEXT_BUDGET", "16384"))
+_provider = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+_default_budget = "8192" if _provider == "local" else "16384"
+TOTAL_CONTEXT_BUDGET = int(os.getenv("RAG_TOTAL_CONTEXT_BUDGET", _default_budget))
 MEMORY_TOKEN_BUDGET = int(os.getenv("RAG_MEMORY_TOKEN_BUDGET", "4096"))
 MIN_KNOWLEDGE_BUDGET = int(os.getenv("RAG_MIN_KNOWLEDGE_BUDGET", "8192"))
 TOKENIZER_ENCODING = "cl100k_base"

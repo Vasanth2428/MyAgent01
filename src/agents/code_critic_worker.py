@@ -155,6 +155,14 @@ def code_critic_worker_node(state: dict) -> dict:
     
     if is_invalid and retry_count < 2:
         logger.info(f"[CODE CRITIC WORKER] Critical issue detected! Forcing supervisor retry (retry {retry_count + 1}/2).")
+        
+        # Trigger workspace restore/rollback to green snapshot
+        from src.tools.rollback import restore_workspace
+        try:
+            restore_workspace()
+        except Exception as e:
+            logger.error(f"[CODE CRITIC WORKER] Failed to restore workspace: {e}")
+            
         current_plan = state.get("plan", [])
 
         # Issue #2: Include specific critic findings in the retry task so the

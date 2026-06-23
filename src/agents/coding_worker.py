@@ -42,13 +42,14 @@ Your Code Intelligence Capabilities:
 - Create and edit files in `./workspace` using create_files and modify_files.
 - Generate patch diffs using create_patch_diff and validate them using dry_run_and_validate_patch.
 - Run safe allowed validation commands using run_safe_commands.
+- Capture webpage viewports visually using take_webpage_screenshot to verify layouts and styles.
 
 Required Workflow Steps:
 1. analyze_repository: Examine directory structures, search symbols, and dependencies (e.g., get_repository_structure, search_symbols, search_code_hybrid).
 2. understand_dependencies: Trace call trees and file relationships before analysis.
 3. audit_code: Identify bugs, security vulnerabilities, or architectural issues.
 4. write_tests_and_code: If tasked with creating a new backend route, logic, or feature, look for or write the unit test suite (e.g. using `pytest`) first. Define inputs, expected responses, status codes, and database states in the test file before coding the actual handler logic.
-5. validate_changes: Run dry-run patch validation or execute allowed validation commands using `run_safe_commands` to verify correctness. For frontend/web projects, you MUST run `npm run build` to verify the build completes without errors. For Python files, run `python -m py_compile [file]` AND execute unit tests (e.g. `pytest [test_file]`), verifying that they exit with status 0.
+5. validate_changes: Run dry-run patch validation or execute allowed validation commands using `run_safe_commands` to verify correctness. For frontend/web projects, you MUST run `npm run build` to verify the build completes without errors. You can also run dev servers and visually verify layouts/styling by capturing screenshots via `take_webpage_screenshot`. For Python files, run `python -m py_compile [file]` AND execute unit tests (e.g. `pytest [test_file]`), verifying that they exit with status 0.
 6. return_summary: Present the final response.
 
 Strict Safety Rules:
@@ -291,6 +292,16 @@ def dry_run_and_validate_patch(filepath: str, patch_diff: str, test_command: Opt
 
 
 @tool
+def take_webpage_screenshot(url: str, save_path: str = "screenshot.png") -> str:
+    """Launches a headless browser to navigate to the specified URL and captures a screenshot of the webpage viewport, saving it to save_path. Useful for verifying UI layouts and design styles."""
+    try:
+        from src.tools.visual_tools import capture_viewport_screenshot
+        return capture_viewport_screenshot(url, save_path)
+    except Exception as e:
+        return f"Error executing screenshot: {e}"
+
+
+@tool
 def audit_file_security(filepath: str) -> str:
     """Scans a specific file for potential security vulnerabilities including hardcoded secrets, injection risks, and path traversal."""
     try:
@@ -403,6 +414,7 @@ tools_map = {
     "search_code_hybrid": search_code_hybrid,
     "create_patch_diff": create_patch_diff,
     "dry_run_and_validate_patch": dry_run_and_validate_patch,
+    "take_webpage_screenshot": take_webpage_screenshot,
     "audit_file_security": audit_file_security,
     "get_call_graph": get_call_graph,
     "get_symbols_in_file": get_symbols_in_file,
@@ -421,7 +433,7 @@ def get_coding_model(task: str = ""):
     from src.core.model_provider import build_model_with_fallback, resolve_provider
     
     # Prune tools if the task is simple to save token budget
-    keywords = ["dependency", "dependencies", "symbol", "symbols", "call graph", "audit", "security", "patch", "diff", "hybrid", "create", "write", "file", "modify", "edit", "scaffold"]
+    keywords = ["dependency", "dependencies", "symbol", "symbols", "call graph", "audit", "security", "patch", "diff", "hybrid", "create", "write", "file", "modify", "edit", "scaffold", "screenshot", "visual"]
     use_full_tools = any(kw in task.lower() for kw in keywords) if task else True
     
     if use_full_tools:
@@ -688,6 +700,14 @@ def coding_worker_node(state: dict) -> dict:
         
     print(f"\n[CODING WORKER] Initiating coding task: '{target_instruction[:60]}...'")
     
+    # Trigger workspace backup if starting a new task
+    if int(state.get("coding_worker_step", 0)) == 0:
+        from src.tools.rollback import backup_workspace
+        try:
+            backup_workspace()
+        except Exception as e:
+            logger.error(f"[CODING WORKER] Failed to backup workspace: {e}")
+            
     model = get_coding_model(target_instruction)
     
     # Restore or initialize messages context for the agent's internal loop
@@ -800,8 +820,8 @@ def coding_worker_node(state: dict) -> dict:
         except Exception as e:
             logger.warning(f"[CODING WORKER] Workspace pre-check failed: {e}")
     
-    max_steps = 8
-    max_tool_calls = 15
+    max_steps = 14
+    max_tool_calls = 30
     broken_out = False
     final_explanation = "Task not completed due to step limit."
     blocked_for_approval = None

@@ -212,6 +212,21 @@ class LLMService:
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.retry_callback = None
+        
+        provider = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+        if provider == "local":
+            from openai import OpenAI, AsyncOpenAI
+            from src.core.config import LOCAL_LLM_API_BASE, LOCAL_LLM_MODEL
+            self.api_key = "local-no-key"
+            self.is_mock = False
+            self.model = model or LOCAL_LLM_MODEL
+            self._raw_sync = OpenAI(api_key=self.api_key, base_url=LOCAL_LLM_API_BASE)
+            self._raw_async = AsyncOpenAI(api_key=self.api_key, base_url=LOCAL_LLM_API_BASE)
+            self.client = RobustLLMClient(self._raw_sync, self)
+            self.async_client = RobustAsyncLLMClient(self._raw_async, self)
+            logger.info(f"LLM Service connected to local model: {self.model} via endpoint {LOCAL_LLM_API_BASE}")
+            return
+
         raw_key = api_key or os.getenv("GROQ_API_KEY")
         import sys
         is_testing = "pytest" in sys.modules or "unittest" in sys.modules or any("test" in arg for arg in sys.argv)
@@ -246,7 +261,14 @@ class LLMService:
             is_t = False
             if isinstance(e, (groq.RateLimitError, groq.APIConnectionError, groq.InternalServerError, groq.APITimeoutError)):
                 is_t = True
-            elif hasattr(e, "status_code"):
+            else:
+                try:
+                    import openai
+                    if isinstance(e, (openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError, openai.APITimeoutError)):
+                        is_t = True
+                except Exception:
+                    pass
+            if not is_t and hasattr(e, "status_code"):
                 is_t = e.status_code == 429 or (e.status_code and e.status_code >= 500)
             
             if is_t:
@@ -283,7 +305,14 @@ class LLMService:
             is_t = False
             if isinstance(e, (groq.RateLimitError, groq.APIConnectionError, groq.InternalServerError, groq.APITimeoutError)):
                 is_t = True
-            elif hasattr(e, "status_code"):
+            else:
+                try:
+                    import openai
+                    if isinstance(e, (openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError, openai.APITimeoutError)):
+                        is_t = True
+                except Exception:
+                    pass
+            if not is_t and hasattr(e, "status_code"):
                 is_t = e.status_code == 429 or (e.status_code and e.status_code >= 500)
             
             if is_t:
@@ -394,7 +423,8 @@ class LLMService:
 # Monkeypatch ChatGroq if GROQ keys are missing or invalid
 import os
 groq_key = os.getenv("GROQ_API_KEY") or os.getenv("GROQ_CORE_KEY") or os.getenv("AGENT_API_KEY")
-if not groq_key or "your_" in groq_key or "mock" in groq_key:
+provider = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+if provider != "local" and (not groq_key or "your_" in groq_key or "mock" in groq_key):
     try:
         import langchain_groq
         from langchain_core.messages import AIMessage

@@ -25,10 +25,26 @@ def generate_diff_patch(filepath: str, original_code: str, replacement_code: str
     return "".join(diff)
 
 
+def get_indentation(s: str) -> str:
+    """Returns leading spaces/tabs of a string."""
+    indent = ""
+    for char in s:
+        if char in (' ', '\t'):
+            indent += char
+        else:
+            break
+    return indent
+
+
+def normalize_whitespace(s: str) -> str:
+    """Strips and normalizes internal whitespaces for relaxed matching."""
+    return " ".join(s.strip().split())
+
+
 def apply_patch(original_text: str, patch_text: str) -> str:
     """
-    Pure Python implementation of unified diff patch applier.
-    Validates context and raises ValueError if hunks do not match.
+    Unified diff patch applier with whitespace tolerance and indentation shift support.
+    Validates context using normalized whitespace checks and shifts added lines accordingly.
     """
     original_lines = original_text.splitlines()
     patch_lines = patch_text.splitlines()
@@ -60,6 +76,41 @@ def apply_patch(original_text: str, patch_text: str) -> str:
                 
             patch_idx += 1
             
+            # Look ahead to find the first context or deletion line to determine indentation shift for this hunk
+            hunk_indent = ""
+            orig_indent = ""
+            lookahead_idx = patch_idx
+            first_hunk_line = None
+            while lookahead_idx < len(patch_lines):
+                l = patch_lines[lookahead_idx]
+                if l.startswith("@@") or l.startswith("---") or l.startswith("+++"):
+                    break
+                if l.startswith(" ") or l.startswith("-"):
+                    first_hunk_line = l
+                    break
+                lookahead_idx += 1
+                
+            if first_hunk_line is not None:
+                # Find matched original line in the file
+                target_norm = normalize_whitespace(first_hunk_line[1:])
+                matched_orig_line = None
+                scan_idx = orig_idx
+                while scan_idx < len(original_lines):
+                    if normalize_whitespace(original_lines[scan_idx]) == target_norm:
+                        matched_orig_line = original_lines[scan_idx]
+                        orig_idx = scan_idx  # align original index to the matched line
+                        break
+                    scan_idx += 1
+                    
+                if matched_orig_line is not None:
+                    hunk_indent = get_indentation(first_hunk_line[1:])
+                    orig_indent = get_indentation(matched_orig_line)
+            
+            # Catch up original lines to newly aligned orig_idx
+            while original_idx < orig_idx and original_idx < len(original_lines):
+                output_lines.append(original_lines[original_idx])
+                original_idx += 1
+                
             # Process hunk content
             while patch_idx < len(patch_lines):
                 hunk_line = patch_lines[patch_idx]
@@ -70,7 +121,7 @@ def apply_patch(original_text: str, patch_text: str) -> str:
                     if original_idx >= len(original_lines):
                         raise ValueError("Patch hunk mismatch: reached end of file expecting context.")
                     orig_l = original_lines[original_idx]
-                    if orig_l != hunk_line[1:]:
+                    if normalize_whitespace(orig_l) != normalize_whitespace(hunk_line[1:]):
                         raise ValueError(f"Patch hunk mismatch: expected context '{hunk_line[1:]}', got '{orig_l}'")
                     output_lines.append(orig_l)
                     original_idx += 1
@@ -78,11 +129,16 @@ def apply_patch(original_text: str, patch_text: str) -> str:
                     if original_idx >= len(original_lines):
                         raise ValueError("Patch hunk mismatch: reached end of file expecting line to delete.")
                     orig_l = original_lines[original_idx]
-                    if orig_l != hunk_line[1:]:
+                    if normalize_whitespace(orig_l) != normalize_whitespace(hunk_line[1:]):
                         raise ValueError(f"Patch hunk mismatch: expected deletion '{hunk_line[1:]}', got '{orig_l}'")
                     original_idx += 1
                 elif hunk_line.startswith("+"):
-                    output_lines.append(hunk_line[1:])
+                    added_line = hunk_line[1:]
+                    if hunk_indent and added_line.startswith(hunk_indent):
+                        shifted_line = orig_indent + added_line[len(hunk_indent):]
+                    else:
+                        shifted_line = added_line
+                    output_lines.append(shifted_line)
                 elif hunk_line.startswith("\\ No newline"):
                     pass
                     

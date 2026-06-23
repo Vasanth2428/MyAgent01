@@ -129,3 +129,21 @@ def test_google_genai_uses_custom_api_key_envs():
     kwargs = constructor.call_args[1]
     assert kwargs.get("api_key") == "test-key-value"
     assert result is base
+
+
+def test_local_provider_resolution():
+    base = MagicMock()
+    with patch.dict(
+        os.environ,
+        {"LLM_PROVIDER": "local", "LOCAL_LLM_API_BASE": "http://localhost:12345/v1", "LOCAL_LLM_MODEL": "custom-local:7b"},
+        clear=True,
+    ), patch(
+        "langchain_openai.ChatOpenAI", return_value=base
+    ) as constructor:
+        result = build_chat_model("test_role", "default-model")
+    
+    constructor.assert_called_once()
+    kwargs = constructor.call_args[1]
+    assert kwargs.get("base_url") == "http://localhost:12345/v1"
+    assert kwargs.get("model") == "custom-local:7b"
+    assert result is base
