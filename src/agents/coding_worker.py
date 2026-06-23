@@ -950,7 +950,28 @@ def coding_worker_node(state: dict) -> dict:
                     state["pending_file_approvals"] = pending_file_approvals
                     set_pending_approval(session_id, filepath, tool_name, tool_args, tool_id)
                     
-                    obs = f"Approval required for {tool_name} on {filepath}. Please reply approve or yes to confirm."
+                    diff_preview = ""
+                    if tool_name == "modify_files":
+                        target = tool_args.get("target_code", "")
+                        repl = tool_args.get("replacement_code", "")
+                        try:
+                            from src.tools.patch_tools import generate_diff_patch
+                            diff_text = generate_diff_patch(filepath, target, repl)
+                            diff_preview = f"\n\nProposed Changes:\n```diff\n{diff_text}\n```\n"
+                        except Exception as e:
+                            diff_preview = f"\n(Error generating diff: {e})\n"
+                    elif tool_name == "create_files":
+                        content = tool_args.get("content", "")
+                        preview = content[:500] + ("..." if len(content) > 500 else "")
+                        diff_preview = f"\n\nProposed File Content (Preview):\n```\n{preview}\n```\n"
+                    elif tool_name == "delete_file":
+                        diff_preview = f"\n\nProposed Action: Delete file '{filepath}'\n"
+
+                    obs = (
+                        f"Approval required for {tool_name} on {filepath}."
+                        f"{diff_preview}"
+                        f"Please reply 'approve' or 'yes' to apply changes, or 'reject' to cancel."
+                    )
                     print(f"  Blocked Tool: {tool_name} on {filepath} - Awaiting user approval.")
                     blocked_for_approval_list.append((tool_name, filepath, tool_id, obs))
                     

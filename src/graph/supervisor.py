@@ -215,14 +215,24 @@ def supervisor_node(state: dict) -> dict:
 
         elif approval_decision == "rejected":
             clear_pending_approval(session_id)
+            
+            # Extract steering feedback from latest user message
+            user_feedback = latest_user_message.strip()
+            # Remove leading rejection words (no, reject, deny, cancel, stop, dont, don't)
+            import re
+            cleaned_feedback = re.sub(r'^(?:no|reject|deny|stop|cancel|dont|don\'t)(?:\s*,\s*|\s+)?', '', user_feedback, flags=re.IGNORECASE)
+            
+            feedback_reason = f"User feedback: \"{cleaned_feedback}\"" if cleaned_feedback else "No feedback provided."
+            rejection_message = f"Error: User rejected the proposed file modifications. {feedback_reason}"
+            
             state_update_overrides["scratchpad_references"] = scratchpad_references + [
-                "- [SYSTEM HITL]: User rejected the proposed file modifications."]
-            logger.info("Human-in-the-Loop: User rejected changes.")
+                f"- [SYSTEM HITL]: User rejected the proposed file modifications. {feedback_reason}"]
+            logger.info(f"Human-in-the-Loop: User rejected changes. {feedback_reason}")
             
             state_update_overrides["waiting_for_approval"] = False
             state_update_overrides["pending_file_approvals"] = {}
             state_update_overrides["approval_decision"] = "rejected"
-            state_update_overrides["coding_worker_resume_tool_result"] = "Error: User rejected the proposed file modifications."
+            state_update_overrides["coding_worker_resume_tool_result"] = rejection_message
             state_update_overrides["coding_worker_resume_tool_call_id"] = pending_tool_call_id
 
         else:
