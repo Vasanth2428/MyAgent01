@@ -12,7 +12,6 @@ Replaces: custom cosine similarity, numpy decay math, MemoryEntry, tiktoken budg
 
 import logging
 import time
-from typing import Optional
 from langgraph.store.memory import InMemoryStore
 
 from src.core.config import MEMORY_TOKEN_BUDGET, TOKENIZER_ENCODING
@@ -21,6 +20,22 @@ logger = logging.getLogger("RAG.Memory")
 
 # Shared store instance — one store per process, namespaced by session
 _store = InMemoryStore()
+
+try:
+    import tiktoken
+    _tokenizer = tiktoken.get_encoding(TOKENIZER_ENCODING)
+except Exception:
+    _tokenizer = None
+
+
+def _count_line_tokens(role: str, text: str) -> int:
+    line = f"[{role}]: {text}\n"
+    if _tokenizer:
+        try:
+            return len(_tokenizer.encode(line))
+        except Exception:
+            pass
+    return len(line) // 4
 
 
 class ConversationMemory:
@@ -53,6 +68,10 @@ class ConversationMemory:
         # Deterministic key: role + hash of text prevents storing exact duplicates
         import hashlib
         key = f"{role}_{hashlib.md5(text.encode()).hexdigest()[:12]}"
+        
+        # Precalculate tokens
+        tokens = _count_line_tokens(role, text)
+        
         _store.put(
             self._namespace,
             key,
@@ -61,6 +80,7 @@ class ConversationMemory:
                 "role": role,
                 "importance": importance,
                 "turn": self._turn_counter,
+                "tokens": tokens,
             },
         )
         logger.debug(f"Memory stored: role={role}, turn={self._turn_counter}, key={key}")
@@ -86,30 +106,44 @@ class ConversationMemory:
     @entries.setter
     def entries(self, value: list['MemoryEntry']):
         try:
+            # Differential update: find existing entries first
             items = _store.search(self._namespace, limit=10000)
-            for item in items:
-                _store.delete(self._namespace, item.key)
-        except Exception as e:
-            logger.warning(f"Failed to clear store during prune: {e}")
+            existing_keys = {item.key: item for item in items}
 
-        max_turn = 0
-        for entry in value:
-            if entry.turn_count > max_turn:
-                max_turn = entry.turn_count
-            import hashlib
-            key = f"{entry.role}_{hashlib.md5(entry.text.encode()).hexdigest()[:12]}"
-            _store.put(
-                self._namespace,
-                key,
-                {
-                    "text": entry.text,
-                    "role": entry.role,
-                    "importance": entry.base_importance,
-                    "turn": entry.turn_count,
-                },
-            )
-        if max_turn > 0:
-            self._turn_counter = max_turn
+            # Map new entries to their keys
+            new_keys = {}
+            for entry in value:
+                import hashlib
+                key = f"{entry.role}_{hashlib.md5(entry.text.encode()).hexdigest()[:12]}"
+                new_keys[key] = entry
+
+            # Delete keys that are not in the new entries
+            for key in existing_keys:
+                if key not in new_keys:
+                    _store.delete(self._namespace, key)
+
+            # Insert/update entries only if they are not already in the store
+            max_turn = 0
+            for key, entry in new_keys.items():
+                if entry.turn_count > max_turn:
+                    max_turn = entry.turn_count
+                if key not in existing_keys:
+                    tokens = _count_line_tokens(entry.role, entry.text)
+                    _store.put(
+                        self._namespace,
+                        key,
+                        {
+                            "text": entry.text,
+                            "role": entry.role,
+                            "importance": entry.base_importance,
+                            "turn": entry.turn_count,
+                            "tokens": tokens,
+                        },
+                    )
+            if max_turn > 0:
+                self._turn_counter = max_turn
+        except Exception as e:
+            logger.warning(f"Failed to update store during prune: {e}")
 
     def get_active_context(self) -> str:
         """
@@ -117,12 +151,6 @@ class ConversationMemory:
         and returns a formatted string within the token budget.
         """
         t_start = time.time()
-        try:
-            import tiktoken
-            tokenizer = tiktoken.get_encoding(TOKENIZER_ENCODING)
-        except Exception:
-            tokenizer = None
-
         try:
             items = _store.search(self._namespace, limit=10000)
         except Exception as e:
@@ -151,11 +179,18 @@ class ConversationMemory:
                 continue
 
             line = f"[{entry.get('role', 'user')}]: {entry.get('text', '')}\n"
-            if tokenizer:
-                line_tokens = len(tokenizer.encode(line))
-                if total_tokens + line_tokens > self._max_tokens:
-                    break
-                total_tokens += line_tokens
+            
+            # Use precalculated token count if available
+            line_tokens = entry.get("tokens")
+            if line_tokens is None:
+                if _tokenizer:
+                    line_tokens = len(_tokenizer.encode(line))
+                else:
+                    line_tokens = len(line) // 4
+                    
+            if total_tokens + line_tokens > self._max_tokens:
+                break
+            total_tokens += line_tokens
             context_parts.insert(0, line)  # Prepend to restore chronological order
 
         t_ms = (time.time() - t_start) * 1000
@@ -164,6 +199,7 @@ class ConversationMemory:
             f"({total_tokens} tokens) in {t_ms:.1f}ms"
         )
         return "".join(context_parts)
+
 
 
 # Backward-compat: MemoryEntry is no longer used internally but kept as a stub

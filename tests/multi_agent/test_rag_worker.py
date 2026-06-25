@@ -1,11 +1,8 @@
 # Tests for RAG worker.
-import pytest
-from unittest.mock import Mock, MagicMock
 
 
 def test_rag_worker_no_documents():
     """Test RAG worker responds correctly when no documents found."""
-    from langchain_core.messages import AIMessage
     from src.agents.rag_worker import rag_worker_node
     
     state = {
@@ -26,7 +23,6 @@ def test_rag_worker_no_documents():
 
 def test_rag_worker_with_documents():
     """Test RAG worker formats documents correctly."""
-    from langchain_core.messages import AIMessage
     from src.agents.rag_worker import rag_worker_node
     
     state = {

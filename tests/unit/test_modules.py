@@ -1,14 +1,12 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import os
-import shutil
 import numpy as np
 
 # Set environment variable dummy key for tests if not present
 if not os.environ.get("GROQ_API_KEY"):
     os.environ["GROQ_API_KEY"] = "gsk_dummy_key_for_testing_purposes"
 
-from src.core.config import CHUNK_SIZE, CHUNK_OVERLAP
 from src.core.splitter import RecursiveCharacterSplitter
 from src.core.compressor import Compressor
 from src.core.memory import ConversationMemory

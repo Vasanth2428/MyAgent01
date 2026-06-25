@@ -3,7 +3,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import logging_setup to activate global safe print wrapper
-import src.core.logging_setup
 
 # Mock FlashrankRerank to make unit tests fast, deterministic and 100% offline
 class MockFlashrankRerank:

@@ -15,16 +15,13 @@ Run these evaluations after changes to make sure nothing got worse.
 import logging
 import time
 import re
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict
 from dataclasses import dataclass, field
-from functools import lru_cache
 
 from src.core.services.grounding_service import _get_shared_embedding_model
-from src.core.config import RERANKER_MODEL
 from src.core.reranker import NeuralReranker
 from src.core.compressor import Compressor
 from src.core.hyde import HyDEGenerator
-from src.core.memory import ConversationMemory
 
 logger = logging.getLogger("RAG.Evaluator")
 
@@ -435,7 +432,6 @@ def run_full_evaluation(query: str, expected_answer: str, documents: List[str],
     This is a convenience function that runs retrieval, reranking, HyDE,
     and compression evaluations in one go.
     """
-    import re
     evaluator = RAGEvaluator(retriever, llm_client)
     
     results, _, _ = retriever.retrieve(query, top_k=10)

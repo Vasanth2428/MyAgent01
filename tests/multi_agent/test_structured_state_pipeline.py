@@ -9,8 +9,7 @@ variables (not raw scratchpad text) as the source of truth for:
   4. Multi-hop context preservation across aggregation cycles
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from langchain_core.messages import HumanMessage, AIMessage
 
 from src.graph.workflow import aggregate_parallel_results_node

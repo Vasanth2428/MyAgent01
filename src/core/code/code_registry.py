@@ -1,7 +1,6 @@
 import json
 import os
 import logging
-from typing import Dict, Any, List
 
 from src.core.code.indexer import CodeIndexer
 

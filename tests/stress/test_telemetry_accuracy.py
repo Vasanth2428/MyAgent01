@@ -1,4 +1,3 @@
-import pytest
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.core.services.telemetry_service import TelemetryService

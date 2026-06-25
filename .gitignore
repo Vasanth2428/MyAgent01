@@ -40,3 +40,16 @@ logs/
 reports/
 server.log
 *.log
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# SQLite Journal and temp files
+*.db-shm
+*.db-wal
+*.db-journal
+checkpoints/
+

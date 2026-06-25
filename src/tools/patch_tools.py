@@ -1,7 +1,7 @@
 import difflib
 import os
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Tuple
 
 logger = logging.getLogger("RAG.PatchTools")
 

@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from src.core.code.indexer import CodeIndexer
 from src.core.code.code_registry import CodeRegistry

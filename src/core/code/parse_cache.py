@@ -36,12 +36,19 @@ class ParseCache:
         """Load the cache from disk."""
         if os.path.exists(self.cache_path):
             try:
-                with open(self.cache_path, "r", encoding="utf-8") as f:
-                    self._cache = json.load(f)
+                import orjson
+                with open(self.cache_path, "rb") as f:
+                    self._cache = orjson.loads(f.read())
                 logger.info(f"Loaded parse cache with {len(self._cache)} entries from {self.cache_path}")
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Failed to load parse cache, starting fresh: {e}")
-                self._cache = {}
+            except Exception as e:
+                # Fallback to standard json if file is old or malformed
+                try:
+                    with open(self.cache_path, "r", encoding="utf-8") as f:
+                        self._cache = json.load(f)
+                    logger.info(f"Loaded parse cache with {len(self._cache)} entries (standard fallback) from {self.cache_path}")
+                except Exception as inner_e:
+                    logger.warning(f"Failed to load parse cache, starting fresh: {inner_e}")
+                    self._cache = {}
         else:
             logger.debug("No parse cache file found, starting fresh.")
             self._cache = {}
@@ -51,12 +58,20 @@ class ParseCache:
         if not self._dirty:
             return
         try:
-            with open(self.cache_path, "w", encoding="utf-8") as f:
-                json.dump(self._cache, f, indent=2, default=str)
+            import orjson
+            with open(self.cache_path, "wb") as f:
+                f.write(orjson.dumps(self._cache, option=orjson.OPT_INDENT_2, default=str))
             self._dirty = False
             logger.info(f"Saved parse cache with {len(self._cache)} entries to {self.cache_path}")
-        except IOError as e:
-            logger.error(f"Failed to save parse cache: {e}")
+        except Exception as e:
+            try:
+                # Fallback to standard json if orjson fails
+                with open(self.cache_path, "w", encoding="utf-8") as f:
+                    json.dump(self._cache, f, indent=2, default=str)
+                self._dirty = False
+                logger.info(f"Saved parse cache (standard fallback) with {len(self._cache)} entries to {self.cache_path}")
+            except Exception as inner_e:
+                logger.error(f"Failed to save parse cache: {inner_e}")
     
     @staticmethod
     def _compute_hash(filepath: str) -> str:

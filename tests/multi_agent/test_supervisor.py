@@ -1,5 +1,4 @@
 # Tests for supervisor routing.
-import pytest
 from langgraph.graph import END
 
 

@@ -1,7 +1,6 @@
 # Code critic worker node - validates symbol usage, checks for hallucinations, and audits patches.
-import os
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 

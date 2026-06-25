@@ -8,7 +8,7 @@ from src.core.code.symbol_table import SymbolTable
 from src.core.code.dependency_graph import DependencyGraph
 from src.core.code.indexer import CodeIndexer
 from src.core.code.code_registry import CodeRegistry
-from src.tools.patch_tools import generate_diff_patch, apply_patch, dry_run_patch
+from src.tools.patch_tools import generate_diff_patch, apply_patch
 from src.core.code.validation import validate_syntax
 from src.agents.code_critic_worker import code_critic_worker_node
 

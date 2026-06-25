@@ -1,8 +1,6 @@
 # Scraper worker node - crawls URLs and extracts clean text content.
-import os
 import re
 import logging
-from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 logger = logging.getLogger("MultiAgent.ScraperWorker")

@@ -36,7 +36,7 @@ print(f"DEBUG: sys.executable = {sys.executable}", flush=True)
 print(f"DEBUG: sentence-transformers = {sentence_transformers.__version__}", flush=True)
 print(f"DEBUG: transformers = {transformers.__version__}", flush=True)
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, UploadFile, File, Response, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Response, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -80,6 +80,18 @@ from src.core.retriever import WeaviateRetriever
 from src.core.engine import RAGContextEngine
 from src.core.splitter import RecursiveCharacterSplitter
 from src.core.scraper import close_aiohttp_session
+from src.tools.coding_tools import WORKSPACE_ROOT, _get_absolute_path, _has_allowed_extension, ALLOWED_EXTENSIONS
+import base64
+
+def is_safe_workspace_path(filepath: str) -> bool:
+    try:
+        abs_path = _get_absolute_path(filepath)
+        real_workspace = os.path.realpath(WORKSPACE_ROOT)
+        if os.name == 'nt':
+            return abs_path.lower().startswith(real_workspace.lower())
+        return abs_path.startswith(real_workspace)
+    except Exception:
+        return False
 
 # Configure Application Logging
 import logging.handlers
@@ -484,6 +496,121 @@ async def delete_session(session_id: str):
     return None
 
 
+# ------------------------------------------------------------------
+# Workspace IDE Endpoints
+# ------------------------------------------------------------------
+
+class WriteFileRequest(BaseModel):
+    path: str
+    content: str
+
+
+@app.get("/workspace/files")
+async def list_workspace_files():
+    """Recursively lists all allowed files in the workspace, excluding temporary/cache folders."""
+    if not os.path.exists(WORKSPACE_ROOT):
+        return []
+    
+    exclude_dirs = {
+        ".git", ".venv", "venv", "node_modules", ".backups", "checkpoints",
+        ".pytest_cache", ".ruff_cache", "__pycache__"
+    }
+    exclude_files = {
+        ".env", ".gitignore", ".python-version"
+    }
+    
+    files_list = []
+    real_workspace = os.path.realpath(WORKSPACE_ROOT)
+    
+    for root, dirs, files in os.walk(real_workspace):
+        dirs[:] = [d for d in dirs if d not in exclude_dirs]
+        for file in files:
+            if file in exclude_files:
+                continue
+            abs_path = os.path.join(root, file)
+            rel_path = os.path.relpath(abs_path, real_workspace)
+            rel_path_web = rel_path.replace("\\", "/")
+            files_list.append(rel_path_web)
+            
+    return files_list
+
+
+@app.get("/workspace/file")
+async def get_workspace_file(path: str):
+    """Reads a file from the workspace, base64-encoding it if it is an image."""
+    if not is_safe_workspace_path(path):
+        raise HTTPException(status_code=403, detail="Access denied: outside workspace boundary")
+        
+    abs_path = _get_absolute_path(path)
+    if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    _, ext = os.path.splitext(abs_path)
+    ext = ext.lower()
+    
+    binary_extensions = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico"}
+    
+    try:
+        if ext in binary_extensions:
+            with open(abs_path, "rb") as f:
+                content_bytes = f.read()
+            encoded = base64.b64encode(content_bytes).decode("utf-8")
+            
+            mime_type = "image/png"
+            if ext in (".jpg", ".jpeg"):
+                mime_type = "image/jpeg"
+            elif ext == ".gif":
+                mime_type = "image/gif"
+            elif ext == ".svg":
+                mime_type = "image/svg+xml"
+            elif ext == ".ico":
+                mime_type = "image/x-icon"
+                
+            return {
+                "is_binary": True,
+                "mime_type": mime_type,
+                "content": f"data:{mime_type};base64,{encoded}"
+            }
+        else:
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            return {
+                "is_binary": False,
+                "content": content
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+
+
+@app.post("/workspace/write")
+async def write_workspace_file(request: WriteFileRequest):
+    """Safely saves code file changes to disk inside the workspace."""
+    if not is_safe_workspace_path(request.path):
+        raise HTTPException(status_code=403, detail="Access denied: outside workspace boundary")
+        
+    if not _has_allowed_extension(request.path):
+        allowed_str = ", ".join(ALLOWED_EXTENSIONS)
+        raise HTTPException(
+            status_code=400,
+            detail=f"File extension not allowed. Approved extensions: {allowed_str}"
+        )
+        
+    abs_path = _get_absolute_path(request.path)
+    dir_name = os.path.dirname(abs_path)
+    if not os.path.exists(dir_name):
+        try:
+            os.makedirs(dir_name, exist_ok=True)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to create directory: {str(e)}")
+            
+    try:
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.write(request.content)
+        return {"status": "success", "message": f"Successfully saved {request.path}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error writing file: {str(e)}")
+
+
 
 # ------------------------------------------------------------------
 # Approval Management Endpoints (Human-in-the-Loop)
@@ -661,6 +788,258 @@ async def resume_stream(session_id: str):
             yield f"data: {_serialize_event({'event': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# =================================================================
+# Git & Interactive Terminal Support Endpoints
+# =================================================================
+
+class GitCloneRequest(BaseModel):
+    url: str
+    pat: Optional[str] = None
+
+class GitStageRequest(BaseModel):
+    file_path: str
+    stage: bool
+
+class GitCommitRequest(BaseModel):
+    message: str
+
+
+async def run_git_command(*args: str) -> str:
+    """Helper to run a git command in the workspace root."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            *args,
+            cwd=WORKSPACE_ROOT,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        output = stdout.decode("utf-8", errors="replace") + stderr.decode("utf-8", errors="replace")
+        return output.strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Git command failed: {str(e)}")
+
+
+@app.get("/git/status")
+async def git_status():
+    """Gets the current git branch and uncommitted modifications in the workspace."""
+    git_dir = os.path.join(WORKSPACE_ROOT, ".git")
+    if not os.path.exists(git_dir):
+        return {"is_repo": False, "branch": "", "files": []}
+        
+    branch = await run_git_command("branch", "--show-current")
+    status_output = await run_git_command("status", "--porcelain")
+    
+    files = []
+    if status_output:
+        for line in status_output.split("\n"):
+            line = line.strip()
+            if not line or len(line) < 3:
+                continue
+            xy = line[:2]
+            file_path = line[3:]
+            
+            # Map index/worktree status codes
+            status_tag = 'untracked'
+            if 'M' in xy:
+                status_tag = 'modified'
+            elif 'A' in xy:
+                status_tag = 'added'
+            elif 'D' in xy:
+                status_tag = 'deleted'
+            elif '??' in xy:
+                status_tag = 'untracked'
+                
+            files.append({
+                "path": file_path,
+                "status": status_tag,
+                "raw": xy
+            })
+            
+    return {"is_repo": True, "branch": branch, "files": files}
+
+
+@app.post("/git/init")
+async def git_init():
+    """Initializes a new git repository in the workspace."""
+    output = await run_git_command("init")
+    return {"status": "success", "output": output}
+
+
+@app.post("/git/clone")
+async def git_clone(request: GitCloneRequest):
+    """Clones a remote git repository into a folder in the workspace."""
+    url = request.url
+    if request.pat:
+        if "github.com/" in url:
+            prefix = "https://" if url.startswith("https://") else ""
+            clean_url = url.replace("https://", "")
+            url = f"{prefix}{request.pat}@{clean_url}"
+            
+    try:
+        repo_name = url.split("/")[-1].replace(".git", "")
+        target_path = os.path.join(WORKSPACE_ROOT, repo_name)
+        
+        if not is_safe_workspace_path(target_path):
+            raise HTTPException(status_code=403, detail="Access denied: target path is outside workspace")
+            
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "clone",
+            url,
+            target_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err_msg = stderr.decode("utf-8", errors="replace")
+            raise HTTPException(status_code=400, detail=f"Clone failed: {err_msg}")
+        return {"status": "success", "message": f"Successfully cloned into {repo_name}"}
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Clone failed: {str(e)}")
+
+
+@app.post("/git/stage")
+async def git_stage(request: GitStageRequest):
+    """Stages (add) or unstages (reset) a file in Git."""
+    if not is_safe_workspace_path(request.file_path):
+        raise HTTPException(status_code=403, detail="Access denied: file path is outside workspace")
+        
+    if request.stage:
+        output = await run_git_command("add", request.file_path)
+    else:
+        output = await run_git_command("reset", "HEAD", request.file_path)
+    return {"status": "success", "output": output}
+
+
+@app.post("/git/commit")
+async def git_commit(request: GitCommitRequest):
+    """Commits staged changes in Git."""
+    if not request.message.strip():
+        raise HTTPException(status_code=400, detail="Commit message cannot be empty")
+    output = await run_git_command("commit", "-m", request.message)
+    return {"status": "success", "output": output}
+
+
+@app.post("/git/sync")
+async def git_sync():
+    """Pulls recent changes and pushes committed work to the remote repo."""
+    pull_output = await run_git_command("pull")
+    push_output = await run_git_command("push")
+    return {
+        "status": "success",
+        "pull_output": pull_output,
+        "push_output": push_output
+    }
+
+
+@app.websocket("/terminal")
+async def terminal_endpoint(websocket: WebSocket):
+    """Establishes an interactive shell terminal subprocess via WebSocket."""
+    # Origin validation for Cross-Site WebSocket Hijacking (CSWSH) protection
+    origin = websocket.headers.get("origin")
+    host = websocket.headers.get("host")
+    if origin and host:
+        from urllib.parse import urlparse
+        parsed_origin = urlparse(origin)
+        if parsed_origin.netloc != host:
+            # Reject connection with policy violation
+            await websocket.close(code=1008)
+            return
+            
+    await websocket.accept()
+    
+    # Spawn powershell on Windows, bash on Posix
+    shell = "powershell.exe" if sys.platform == "win32" else "bash"
+    
+    try:
+        creationflags = 0x08000000 if sys.platform == "win32" else 0
+        proc = await asyncio.create_subprocess_exec(
+            shell,
+            "-NoLogo",
+            cwd=WORKSPACE_ROOT,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            creationflags=creationflags
+        )
+    except Exception as e:
+        try:
+            await websocket.send_text(f"\r\n[Terminal Error] Failed to start shell process: {str(e)}\r\n")
+            await websocket.close()
+        except Exception:
+            pass
+        return
+
+    async def read_stdout():
+        try:
+            while True:
+                data = await proc.stdout.read(1024)
+                if not data:
+                    break
+                await websocket.send_text(data.decode("utf-8", errors="replace"))
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"Terminal stdout read error: {e}")
+
+    async def read_stderr():
+        try:
+            while True:
+                data = await proc.stderr.read(1024)
+                if not data:
+                    break
+                await websocket.send_text(data.decode("utf-8", errors="replace"))
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"Terminal stderr read error: {e}")
+
+    async def read_websocket():
+        try:
+            while True:
+                message = await websocket.receive_text()
+                proc.stdin.write(message.encode("utf-8"))
+                await proc.stdin.drain()
+        except WebSocketDisconnect:
+            pass
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"Terminal websocket write error: {e}")
+
+    tasks = [
+        asyncio.create_task(read_stdout()),
+        asyncio.create_task(read_stderr()),
+        asyncio.create_task(read_websocket())
+    ]
+    
+    try:
+        await proc.wait()
+    except Exception:
+        pass
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        
+        if proc.returncode is None:
+            try:
+                proc.terminate()
+                await proc.wait()
+            except Exception:
+                pass
+        
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

@@ -15,12 +15,11 @@ import re
 import uuid
 import logging
 import time
-import random
 import threading
 import weaviate
 import weaviate.classes as wvc
 from weaviate.classes.init import Auth
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Tuple, Any
 import weaviate.exceptions
 
 from src.core.config import HYBRID_ALPHA_DEFAULT, HYBRID_ALPHA_KEYWORD
@@ -175,20 +174,33 @@ class WeaviateRetriever:
         self.alpha = HYBRID_ALPHA_DEFAULT
 
         # Load persistent local fallback database if Weaviate is not connected
-        import json
         try:
             if os.path.exists("data/local_docs.json"):
-                with open("data/local_docs.json", "r", encoding="utf-8") as f:
-                    self.local_docs = json.load(f)
-                logger.info(f"Loaded {len(self.local_docs)} documents from local persistent database.")
+                try:
+                    import orjson
+                    with open("data/local_docs.json", "rb") as f:
+                        self.local_docs = orjson.loads(f.read())
+                    logger.info(f"Loaded {len(self.local_docs)} documents from local persistent database using orjson.")
+                except Exception as e_orjson:
+                    import json
+                    with open("data/local_docs.json", "r", encoding="utf-8") as f:
+                        self.local_docs = json.load(f)
+                    logger.info(f"Loaded {len(self.local_docs)} documents from local persistent database using json fallback.")
         except Exception as e:
             logger.warning(f"Failed to load local docs from persistent storage: {e}")
 
         try:
             if os.path.exists("data/local_code_chunks.json"):
-                with open("data/local_code_chunks.json", "r", encoding="utf-8") as f:
-                    self.local_code_chunks = json.load(f)
-                logger.info(f"Loaded {len(self.local_code_chunks)} code chunks from local persistent database.")
+                try:
+                    import orjson
+                    with open("data/local_code_chunks.json", "rb") as f:
+                        self.local_code_chunks = orjson.loads(f.read())
+                    logger.info(f"Loaded {len(self.local_code_chunks)} code chunks from local persistent database using orjson.")
+                except Exception as e_orjson:
+                    import json
+                    with open("data/local_code_chunks.json", "r", encoding="utf-8") as f:
+                        self.local_code_chunks = json.load(f)
+                    logger.info(f"Loaded {len(self.local_code_chunks)} code chunks from local persistent database using json fallback.")
         except Exception as e:
             logger.warning(f"Failed to load local code chunks from persistent storage: {e}")
 
@@ -272,10 +284,16 @@ class WeaviateRetriever:
         # Save to local persistent storage
         try:
             os.makedirs("data", exist_ok=True)
-            import json
-            with open("data/local_docs.json", "w", encoding="utf-8") as f:
-                json.dump(self.local_docs, f, ensure_ascii=False, indent=2)
-            logger.debug(f"Saved {len(docs)} documents to local persistent database.")
+            try:
+                import orjson
+                with open("data/local_docs.json", "wb") as f:
+                    f.write(orjson.dumps(self.local_docs, option=orjson.OPT_INDENT_2))
+                logger.debug(f"Saved {len(docs)} documents to local persistent database using orjson.")
+            except Exception as e_orjson:
+                import json
+                with open("data/local_docs.json", "w", encoding="utf-8") as f:
+                    json.dump(self.local_docs, f, ensure_ascii=False, indent=2)
+                logger.debug(f"Saved {len(docs)} documents to local persistent database using json fallback.")
         except Exception as e:
             logger.warning(f"Failed to persist local documents: {e}")
 
@@ -457,10 +475,16 @@ class WeaviateRetriever:
         # Save to local persistent storage
         try:
             os.makedirs("data", exist_ok=True)
-            import json
-            with open("data/local_code_chunks.json", "w", encoding="utf-8") as f:
-                json.dump(self.local_code_chunks, f, ensure_ascii=False, indent=2)
-            logger.debug(f"Saved {len(chunks)} code chunks to local persistent database.")
+            try:
+                import orjson
+                with open("data/local_code_chunks.json", "wb") as f:
+                    f.write(orjson.dumps(self.local_code_chunks, option=orjson.OPT_INDENT_2))
+                logger.debug(f"Saved {len(chunks)} code chunks to local persistent database using orjson.")
+            except Exception as e_orjson:
+                import json
+                with open("data/local_code_chunks.json", "w", encoding="utf-8") as f:
+                    json.dump(self.local_code_chunks, f, ensure_ascii=False, indent=2)
+                logger.debug(f"Saved {len(chunks)} code chunks to local persistent database using json fallback.")
         except Exception as e:
             logger.warning(f"Failed to persist local code chunks: {e}")
 

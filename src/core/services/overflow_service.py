@@ -1,8 +1,8 @@
 import logging
 import tiktoken
 import asyncio
-from typing import Tuple, List
-from src.core.config import CONTEXT_WINDOW_LIMIT, TOKENIZER_ENCODING
+from typing import Tuple
+from src.core.config import TOKENIZER_ENCODING
 
 logger = logging.getLogger("RAG.Services.Overflow")
 tokenizer = tiktoken.get_encoding(TOKENIZER_ENCODING)
@@ -108,18 +108,19 @@ class ContextOverflowService:
                 temp_entries = list(memory.entries)
                 pruned_count = 0
                 
-                def get_entries_tokens(entries):
-                    text = "".join([f"[{e.role}]: {e.text}\n" for e in entries])
-                    return count_tokens_fn(text)
-                    
-                while len(temp_entries) > 1 and (instruction_tokens + get_entries_tokens(temp_entries) + doc_tokens + query_tokens + 15) > context_limit:
+                entry_tokens = [count_tokens_fn(f"[{e.role}]: {e.text}\n") for e in temp_entries]
+                total_entry_tokens = sum(entry_tokens)
+                
+                while len(temp_entries) > 1 and (instruction_tokens + total_entry_tokens + doc_tokens + query_tokens + 15) > context_limit:
                     temp_entries.pop(0)
+                    removed_tokens = entry_tokens.pop(0)
+                    total_entry_tokens -= removed_tokens
                     pruned_count += 1
                 
                 if pruned_count > 0:
                     memory.entries = temp_entries
                     memory_text = "".join([f"[{e.role}]: {e.text}\n" for e in temp_entries])
-                    mem_tokens = count_tokens_fn(memory_text)
+                    mem_tokens = total_entry_tokens
                     total_prompt_tokens = instruction_tokens + mem_tokens + doc_tokens + query_tokens + 15
                     overflow_steps.append(f"   - Evicted {pruned_count} oldest conversational turns. Memory shrunk from {old_mem_tokens} to {mem_tokens} tokens.")
                 else:
@@ -216,18 +217,19 @@ class ContextOverflowService:
                 temp_entries = list(memory.entries)
                 pruned_count = 0
                 
-                def get_entries_tokens(entries):
-                    text = "".join([f"[{e.role}]: {e.text}\n" for e in entries])
-                    return count_tokens_fn(text)
-                    
-                while len(temp_entries) > 1 and (instruction_tokens + get_entries_tokens(temp_entries) + doc_tokens + query_tokens + 15) > context_limit:
+                entry_tokens = [count_tokens_fn(f"[{e.role}]: {e.text}\n") for e in temp_entries]
+                total_entry_tokens = sum(entry_tokens)
+                
+                while len(temp_entries) > 1 and (instruction_tokens + total_entry_tokens + doc_tokens + query_tokens + 15) > context_limit:
                     temp_entries.pop(0)
+                    removed_tokens = entry_tokens.pop(0)
+                    total_entry_tokens -= removed_tokens
                     pruned_count += 1
                 
                 if pruned_count > 0:
                     memory.entries = temp_entries
                     memory_text = "".join([f"[{e.role}]: {e.text}\n" for e in temp_entries])
-                    mem_tokens = count_tokens_fn(memory_text)
+                    mem_tokens = total_entry_tokens
                     total_prompt_tokens = instruction_tokens + mem_tokens + doc_tokens + query_tokens + 15
                     overflow_steps.append(f"   - Evicted {pruned_count} oldest conversational turns. Memory shrunk from {old_mem_tokens} to {mem_tokens} tokens.")
                 else:

@@ -1,5 +1,4 @@
 import unittest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 import groq
 

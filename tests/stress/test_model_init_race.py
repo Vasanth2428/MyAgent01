@@ -3,15 +3,13 @@ Model Initialization Race Test - Verify singleton embedding and reranking models
 """
 import pytest
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.core.services.grounding_service import _get_shared_embedding_model
-from src.core.reranker import _get_flashrank_reranker, NeuralReranker, RERANKER_MODEL
+from src.core.reranker import _get_flashrank_reranker, NeuralReranker
 
 
 def test_model_initialization_race_condition():
     """Verify singleton embedding model loads exactly once under concurrent initialization."""
-    import importlib
     import sys
     
     # Reset the module-level state to test fresh initialization
@@ -47,7 +45,6 @@ def test_model_initialization_race_condition():
 
 def test_reranker_model_race_condition():
     """Verify reranker model initializes safely under concurrent load."""
-    import importlib
     import sys
     
     # Reset state
@@ -77,7 +74,6 @@ def test_reranker_model_race_condition():
 
 def test_cross_encoder_singleton_safety():
     """Verify FlashrankRerank singleton is safe for concurrent access."""
-    import importlib
     import sys
     
     # Reset state
@@ -108,7 +104,6 @@ def test_cross_encoder_singleton_safety():
 
 def test_embedding_model_singleton_safety():
     """Verify embedding model singleton is safe for concurrent access."""
-    import importlib
     import sys
     
     # Reset state

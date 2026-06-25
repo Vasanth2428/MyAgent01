@@ -1,5 +1,4 @@
 # Critic & analysis worker node - fact-checks scratchpad findings and verifies consistency.
-import os
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 

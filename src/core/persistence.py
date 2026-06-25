@@ -9,7 +9,6 @@ conversation where you left off.
 import sqlite3
 import time
 import logging
-import random
 from typing import List, Dict
 
 from src.core.config import DB_PATH, HISTORY_LIMIT

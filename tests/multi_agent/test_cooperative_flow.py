@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import Mock, patch
 from langchain_core.messages import HumanMessage, AIMessage
 from src.agents.rag_worker import rag_worker_node

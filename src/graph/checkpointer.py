@@ -4,7 +4,6 @@ import logging
 import re
 import sqlite3
 import contextlib
-from typing import AsyncIterator
 
 logger = logging.getLogger("MultiAgent.Checkpointer")
 

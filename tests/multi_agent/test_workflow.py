@@ -1,5 +1,4 @@
 # Tests for full workflow.
-import pytest
 
 
 def test_workflow_builds():

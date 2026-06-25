@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Set, Dict, Any, List
+from typing import Set, Dict, Any
 
 from src.core.code.parser import parse_code_file, ParserInitializationException
 from src.core.code.symbol_table import SymbolTable

@@ -11,7 +11,7 @@ If the answer isn't well-grounded, we can flag or fix it.
 import logging
 import re
 import threading
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 import numpy as np
 
 # Model used for client-side semantic checks (hallucination detection, evaluation)
@@ -19,8 +19,56 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 logger = logging.getLogger("RAG.Services.Grounding")
 
-_embedding_model_instance: Optional["SentenceTransformer"] = None
+_embedding_model_instance = None
 _embedding_model_lock = threading.Lock()
+
+_embedding_cache: Dict[str, np.ndarray] = {}
+_embedding_cache_lock = threading.Lock()
+
+
+def _get_cached_embedding(text: str, emb_model) -> np.ndarray:
+    global _embedding_cache
+    with _embedding_cache_lock:
+        if text in _embedding_cache:
+            return _embedding_cache[text]
+
+    # Compute if not in cache
+    emb = emb_model.encode([text])[0]
+
+    with _embedding_cache_lock:
+        # Avoid unbounded growth
+        if len(_embedding_cache) < 10000:
+            _embedding_cache[text] = emb
+    return emb
+
+
+def _get_cached_embeddings_bulk(texts: List[str], emb_model) -> List[np.ndarray]:
+    global _embedding_cache
+    results = []
+    missing_texts = []
+    missing_indices = []
+
+    with _embedding_cache_lock:
+        for idx, text in enumerate(texts):
+            if text in _embedding_cache:
+                results.append((idx, _embedding_cache[text]))
+            else:
+                missing_texts.append(text)
+                missing_indices.append(idx)
+
+    if missing_texts:
+        # Bulk encode all missing
+        embs = emb_model.encode(missing_texts)
+        with _embedding_cache_lock:
+            for idx, text, emb in zip(missing_indices, missing_texts, embs):
+                if len(_embedding_cache) < 10000:
+                    _embedding_cache[text] = emb
+                results.append((idx, emb))
+
+    # Sort back to original order
+    results.sort(key=lambda x: x[0])
+    return [r[1] for r in results]
+
 
 
 def _get_shared_embedding_model():
@@ -29,9 +77,28 @@ def _get_shared_embedding_model():
     if _embedding_model_instance is None:
         with _embedding_model_lock:
             if _embedding_model_instance is None:
-                from sentence_transformers import SentenceTransformer
-                logger.info(f"Loading embedding model for grounding checks: {EMBEDDING_MODEL}")
-                _embedding_model_instance = SentenceTransformer(EMBEDDING_MODEL)
+                # 1. Try FastEmbed first (lightweight ONNX engine)
+                try:
+                    from fastembed import TextEmbedding
+                    logger.info("Attempting to load FastEmbed model (sentence-transformers/all-MiniLM-L6-v2)...")
+                    
+                    class FastEmbedAdapter:
+                        def __init__(self, model_name: str):
+                            self.model = TextEmbedding(model_name=model_name)
+                        def encode(self, texts) -> np.ndarray:
+                            if isinstance(texts, str):
+                                return next(self.model.embed([texts]))
+                            else:
+                                return np.array(list(self.model.embed(texts)))
+                                
+                    _embedding_model_instance = FastEmbedAdapter("sentence-transformers/all-MiniLM-L6-v2")
+                    logger.info("Successfully loaded FastEmbed ONNX model.")
+                except Exception as e:
+                    logger.warning(f"FastEmbed load failed ({e}). Falling back to SentenceTransformer.")
+                    # 2. Fallback to SentenceTransformer (PyTorch engine)
+                    from sentence_transformers import SentenceTransformer
+                    logger.info(f"Loading SentenceTransformer: {EMBEDDING_MODEL}")
+                    _embedding_model_instance = SentenceTransformer(EMBEDDING_MODEL)
     return _embedding_model_instance
 
 
@@ -115,16 +182,27 @@ class GroundingVerifier:
 
         try:
             emb_model = self._embedding_model or self._get_embedding_model()
-            sent_emb = emb_model.encode([sentence])
             
+            # Use cached embedding for the sentence
+            sent_emb = _get_cached_embedding(sentence, emb_model)
+            
+            valid_chunks = [chunk for chunk in context_chunks if chunk.strip()]
+            if not valid_chunks:
+                return False, 0.0
+                
+            # Use cached embeddings for chunks in bulk
+            ctx_embs = _get_cached_embeddings_bulk(valid_chunks, emb_model)
+            
+            sent_norm = np.linalg.norm(sent_emb)
+            if sent_norm == 0:
+                return False, 0.0
+                
             best_score = 0.0
-            for chunk in context_chunks:
-                if not chunk.strip():
+            for ctx_emb in ctx_embs:
+                ctx_norm = np.linalg.norm(ctx_emb)
+                if ctx_norm == 0:
                     continue
-                ctx_emb = emb_model.encode([chunk])
-                similarity = np.dot(sent_emb[0], ctx_emb[0]) / (
-                    np.linalg.norm(sent_emb[0]) * np.linalg.norm(ctx_emb[0])
-                )
+                similarity = np.dot(sent_emb, ctx_emb) / (sent_norm * ctx_norm)
                 best_score = max(best_score, float(similarity))
             
             # Apply entity/number hallucination penalty

@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from src.core.code.parser import extract_symbol_slices, get_symbol_tokens
 from src.tools.coding_tools import _is_safe_path, _has_allowed_extension, _get_absolute_path, view_code_file, edit_code_file

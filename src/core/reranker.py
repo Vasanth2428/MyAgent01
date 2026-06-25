@@ -12,7 +12,7 @@ sigmoid scoring internally.
 import time
 import logging
 import asyncio
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 from src.core.config import RERANKER_MODEL
 

@@ -471,131 +471,187 @@ HYDE GENERATION: ${latency.phase_1_5_hyde_ms || 0} ms
 }
 
 // ---- Real-Time Agentic Loop Processing Monitor ----
+// ---- Real-Time Agentic Loop Processing Monitor ----
 function addOrUpdateStep(stepType, name, detail = '') {
     const listContainer = document.getElementById('agent-steps-list');
-    if (!listContainer) return;
+    const timelineContainer = document.getElementById('agent-trace-timeline');
     
-    // Clear empty message
-    const emptyMsg = listContainer.querySelector('.empty-steps-msg');
-    if (emptyMsg) emptyMsg.remove();
+    // Clear empty message in timeline
+    if (timelineContainer) {
+        const emptyState = timelineContainer.querySelector('.trace-empty-state');
+        if (emptyState) emptyState.remove();
+    }
     
+    const friendlyNames = {
+        'supervisor_node': 'Routing Supervisor',
+        'rag_worker_node': 'RAG Specialist',
+        'web_worker_node': 'Web Search Specialist',
+        'utility_worker_node': 'Utility Specialist',
+        'scraper_worker_node': 'Scraper Specialist',
+        'coding_worker_node': 'Code Specialist',
+        'code_critic_worker_node': 'Code Critic Specialist',
+        'critic_worker_node': 'Critic Specialist',
+        'report_worker_node': 'Report Specialist',
+        'synthesizer_node': 'Response Synthesizer',
+        'aggregate_parallel_results_node': 'Result Aggregator',
+        'early_exit_check': 'Early Exit Validation',
+        'early_exit_execute': 'Fast Path Response',
+        'overflow_recovery': 'Context Overflow Safeguard',
+        'reasoning': 'ReAct Agent Reasoning',
+        'execute_formatting_error': 'Format Correction Handler',
+        'execute_tool': 'Tool Execution Core',
+        'synthesis': 'Final Answer Synthesis',
+        'streaming_final_answer': 'Streaming Assistant Output',
+        'WAITING_FOR_REASONING': 'LLM Inference Reasoning',
+        'WAITING_FOR_ACTION': 'Pipeline Gating & Routing',
+        'EXECUTING_TOOL': 'Information Extraction & Search',
+        'WAITING_FOR_FINAL_ANSWER': 'Compiling Context Data',
+        'STREAMING_FINAL_RESPONSE': 'Generating Final Response Stream'
+    };
+    
+    const icons = {
+        'supervisor_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>`,
+        'rag_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`,
+        'web_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10z"></path></svg>`,
+        'utility_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1.51 1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
+        'scraper_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>`,
+        'coding_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`,
+        'code_critic_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
+        'critic_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
+        'report_worker_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
+        'synthesizer_node': `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>`
+    };
+
     if (stepType === 'node') {
+        const displayName = friendlyNames[name] || name;
+        const icon = icons[name] || `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1.51 1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`;
         const isParallelNode = isInParallelMode && name !== 'aggregate_parallel_results_node' && name !== 'supervisor_node';
         
-        // Mark previous active steps as completed, unless we are entering/running parallel branches
-        const activeSteps = listContainer.querySelectorAll('.agent-step-card.active');
-        activeSteps.forEach(card => {
-            const isCardParallel = card.classList.contains('parallel-branch');
-            const shouldComplete = !isParallelNode || !isCardParallel;
+        // 1. Update Inspector Steps
+        if (listContainer) {
+            const emptyMsg = listContainer.querySelector('.empty-steps-msg');
+            if (emptyMsg) emptyMsg.remove();
             
-            if (shouldComplete) {
-                card.classList.remove('active');
-                card.classList.add('completed');
-                const statusBadge = card.querySelector('.step-status-badge');
-                if (statusBadge) {
-                    statusBadge.textContent = 'COMPLETED';
-                    statusBadge.className = 'step-status-badge status-completed';
+            const activeSteps = listContainer.querySelectorAll('.agent-step-card.active');
+            activeSteps.forEach(card => {
+                const isCardParallel = card.classList.contains('parallel-branch');
+                if (!isParallelNode || !isCardParallel) {
+                    card.classList.remove('active');
+                    card.classList.add('completed');
+                    const statusBadge = card.querySelector('.step-status-badge');
+                    if (statusBadge) {
+                        statusBadge.textContent = 'COMPLETED';
+                        statusBadge.className = 'step-status-badge status-completed';
+                    }
                 }
+            });
+            
+            const card = document.createElement('div');
+            let cardClass = 'agent-step-card active';
+            let parallelBadge = '';
+            if (isParallelNode) {
+                cardClass += ' parallel-branch';
+                parallelBadge = '<span class="step-parallel-badge">COOPERATIVE PARALLEL</span>';
             }
-        });
-
-        // Update visual graph nodes in the tab-graph panel
-        const isParallelVisual = isInParallelMode && name !== 'aggregate_parallel_results_node' && name !== 'supervisor_node';
-        document.querySelectorAll('.agent-graph-viz .graph-node').forEach(node => {
-            const nodeName = node.id.replace('graph-node-', '');
-            const isNodeParallel = nodeName !== 'aggregate_parallel_results_node' && nodeName !== 'supervisor_node';
-            const shouldCompleteNode = !isParallelVisual || !isNodeParallel;
-            if (node.classList.contains('active') && shouldCompleteNode) {
-                node.classList.remove('active');
-                node.classList.add('completed');
-                const statusEl = node.querySelector('.node-status');
-                if (statusEl) statusEl.textContent = 'Completed';
-            }
-        });
-        
-        const nodeEl = document.getElementById('graph-node-' + name);
-        if (nodeEl) {
-            nodeEl.classList.remove('completed');
-            nodeEl.classList.add('active');
-            const statusEl = nodeEl.querySelector('.node-status');
-            if (statusEl) statusEl.textContent = 'Active';
+            card.className = cardClass;
+            card.id = `step-node-${name}-${Date.now()}`;
+            card.innerHTML = `
+                <div class="step-header">
+                    <span class="step-icon-dot"></span>
+                    <span class="step-name">${escapeHtml(displayName)} ${parallelBadge}</span>
+                    <span class="step-status-badge status-active">ACTIVE</span>
+                </div>
+                <div class="step-details" style="display: none;"></div>
+            `;
+            listContainer.appendChild(card);
+            listContainer.scrollTop = listContainer.scrollHeight;
         }
         
-        const friendlyNames = {
-            'supervisor_node': 'Routing Supervisor [Cooperative Planner]',
-            'rag_worker_node': 'RAG Specialist [Knowledge Retrieval]',
-            'web_worker_node': 'Web Search Specialist [Internet Queries]',
-            'utility_worker_node': 'Utility Specialist [Computations & Logic]',
-            'scraper_worker_node': 'Scraper Specialist [URL Extraction]',
-            'coding_worker_node': 'Code Specialist [Software Synthesis]',
-            'code_critic_worker_node': 'Code Critic Specialist [Vulnerability Audit]',
-            'critic_worker_node': 'Critic Specialist [Fact-Check & Audit]',
-            'report_worker_node': 'Report Specialist [Document Generation]',
-            'synthesizer_node': 'Response Synthesizer [Final Fusion]',
-            'aggregate_parallel_results_node': 'Result Aggregator [Cooperative Join]',
-            'early_exit_check': 'Early Exit Validation',
-            'early_exit_execute': 'Fast Path Response',
-            'overflow_recovery': 'Context Overflow Safeguard',
-            'reasoning': 'ReAct Agent Reasoning',
-            'execute_formatting_error': 'Format Correction Handler',
-            'execute_tool': 'Tool Execution Core',
-            'synthesis': 'Final Answer Synthesis',
-            'streaming_final_answer': 'Streaming Assistant Output',
-            'WAITING_FOR_REASONING': 'LLM Inference Reasoning',
-            'WAITING_FOR_ACTION': 'Pipeline Gating & Routing',
-            'EXECUTING_TOOL': 'Information Extraction & Search',
-            'WAITING_FOR_FINAL_ANSWER': 'Compiling Context Data',
-            'STREAMING_FINAL_RESPONSE': 'Generating Final Response Stream'
-        };
-        const displayName = friendlyNames[name] || name;
-        
-        const card = document.createElement('div');
-        let cardClass = 'agent-step-card active';
-        let parallelBadge = '';
-        if (isParallelNode) {
-            cardClass += ' parallel-branch';
-            parallelBadge = '<span class="step-parallel-badge">COOPERATIVE PARALLEL</span>';
+        // 2. Update Timeline steps (tab-graph)
+        if (timelineContainer) {
+            const activeTimelineSteps = timelineContainer.querySelectorAll('.trace-step-card.active');
+            activeTimelineSteps.forEach(card => {
+                const isCardParallel = card.classList.contains('parallel-branch');
+                if (!isParallelNode || !isCardParallel) {
+                    card.classList.remove('active');
+                    card.classList.add('completed');
+                    const statusBadge = card.querySelector('.trace-status-badge');
+                    if (statusBadge) {
+                        statusBadge.textContent = 'COMPLETED';
+                        statusBadge.className = 'trace-status-badge status-completed';
+                    }
+                }
+            });
+            
+            const timeStr = new Date().toLocaleTimeString('en-GB', { hour12: false });
+            const card = document.createElement('div');
+            let cardClass = 'trace-step-card active';
+            let parallelBadge = '';
+            if (isParallelNode) {
+                cardClass += ' parallel-branch';
+                parallelBadge = '<span class="step-parallel-badge">COOPERATIVE PARALLEL</span>';
+            }
+            card.className = cardClass;
+            card.innerHTML = `
+                <div class="trace-step-header">
+                    <span class="trace-agent-icon">${icon}</span>
+                    <div class="trace-agent-info">
+                        <span class="trace-agent-name">${escapeHtml(displayName)} ${parallelBadge}</span>
+                        <span class="trace-timestamp">${timeStr}</span>
+                    </div>
+                    <span class="trace-status-badge status-active">ACTIVE</span>
+                </div>
+                <div class="trace-step-body" style="display: none;"></div>
+            `;
+            timelineContainer.appendChild(card);
+            timelineContainer.scrollTop = timelineContainer.scrollHeight;
         }
-        card.className = cardClass;
-        card.id = `step-node-${name}-${Date.now()}`; // unique id to prevent clash
-        card.innerHTML = `
-            <div class="step-header">
-                <span class="step-icon-dot"></span>
-                <span class="step-name">${escapeHtml(displayName)} ${parallelBadge}</span>
-                <span class="step-status-badge status-active">ACTIVE</span>
-            </div>
-            <div class="step-details" style="display: none;"></div>
-        `;
-        listContainer.appendChild(card);
-        listContainer.scrollTop = listContainer.scrollHeight;
     } else {
-        // Find the last step (current active one)
-        const lastCard = listContainer.lastElementChild;
-        if (lastCard && lastCard.classList.contains('agent-step-card')) {
-            const detailsDiv = lastCard.querySelector('.step-details');
-            if (detailsDiv) {
-                detailsDiv.style.display = 'block';
-                const logDiv = document.createElement('div');
-                if (stepType === 'thought') {
-                    logDiv.className = 'step-thought-log';
-                    logDiv.innerHTML = `<span class="step-detail-label">THOUGHT:</span> ${escapeHtml(detail)}`;
-                } else if (stepType === 'action') {
-                    logDiv.className = 'step-action-log';
-                    logDiv.innerHTML = `<span class="step-detail-label">ACTION:</span> Executing <strong>${escapeHtml(name)}</strong> with: <code>${escapeHtml(detail)}</code>`;
-                } else if (stepType === 'observation') {
-                    logDiv.className = 'step-obs-log';
-                    logDiv.innerHTML = `<span class="step-detail-label">OBSERVATION:</span> ${escapeHtml(detail.substring(0, 150))}${detail.length > 150 ? '...' : ''}`;
+        // Find last card in inspector
+        if (listContainer) {
+            const lastCard = listContainer.lastElementChild;
+            if (lastCard && lastCard.classList.contains('agent-step-card')) {
+                const detailsDiv = lastCard.querySelector('.step-details');
+                if (detailsDiv) {
+                    detailsDiv.style.display = 'block';
+                    const logDiv = document.createElement('div');
+                    if (stepType === 'thought') {
+                        logDiv.className = 'step-thought-log';
+                        logDiv.innerHTML = `<span class="step-detail-label">THOUGHT:</span> ${escapeHtml(detail)}`;
+                    } else if (stepType === 'action') {
+                        logDiv.className = 'step-action-log';
+                        logDiv.innerHTML = `<span class="step-detail-label">ACTION:</span> Executing <strong>${escapeHtml(name)}</strong> with: <code>${escapeHtml(detail)}</code>`;
+                    } else if (stepType === 'observation') {
+                        logDiv.className = 'step-obs-log';
+                        logDiv.innerHTML = `<span class="step-detail-label">OBSERVATION:</span> ${escapeHtml(detail.substring(0, 150))}${detail.length > 150 ? '...' : ''}`;
+                    }
+                    detailsDiv.appendChild(logDiv);
                 }
-                detailsDiv.appendChild(logDiv);
             }
-        } else {
-            // Fallback: If no step card exists (e.g. initial phases), add a simple log line
-            const line = document.createElement('div');
-            line.className = 'step-simple-log';
-            line.innerHTML = `&gt; ${escapeHtml(detail || name)}`;
-            listContainer.appendChild(line);
         }
-        listContainer.scrollTop = listContainer.scrollHeight;
+        
+        // Find last card in timeline
+        if (timelineContainer) {
+            const lastCard = timelineContainer.lastElementChild;
+            if (lastCard && lastCard.classList.contains('trace-step-card')) {
+                const bodyDiv = lastCard.querySelector('.trace-step-body');
+                if (bodyDiv) {
+                    bodyDiv.style.display = 'flex';
+                    const logDiv = document.createElement('div');
+                    if (stepType === 'thought') {
+                        logDiv.className = 'step-thought-log';
+                        logDiv.innerHTML = `<span class="step-detail-label">🧠 THOUGHT:</span> ${escapeHtml(detail)}`;
+                    } else if (stepType === 'action') {
+                        logDiv.className = 'step-action-log';
+                        logDiv.innerHTML = `<span class="step-detail-label">🔧 ACTION:</span> Executing <strong>${escapeHtml(name)}</strong>: <code>${escapeHtml(detail)}</code>`;
+                    } else if (stepType === 'observation') {
+                        logDiv.className = 'step-obs-log';
+                        logDiv.innerHTML = `<span class="step-detail-label">🔍 OBSERVATION:</span> ${escapeHtml(detail)}`;
+                    }
+                    bodyDiv.appendChild(logDiv);
+                }
+            }
+        }
     }
 }
 
@@ -632,12 +688,18 @@ form.addEventListener('submit', async (e) => {
     // Reset/Clear UI state for query run
     reconWindow.innerHTML = '';
     
-    // Reset all visual graph nodes
-    document.querySelectorAll('.agent-graph-viz .graph-node').forEach(node => {
-        node.classList.remove('active', 'completed');
-        const statusEl = node.querySelector('.node-status');
-        if (statusEl) statusEl.textContent = 'Idle';
-    });
+    // Reset agent execution trace timeline
+    const timelineContainer = document.getElementById('agent-trace-timeline');
+    if (timelineContainer) {
+        timelineContainer.innerHTML = `
+            <div class="trace-empty-state">
+                <div class="trace-empty-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="trace-spinner-svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+                </div>
+                <p>Awaiting query execution to generate real-time agent tracing...</p>
+            </div>
+        `;
+    }
 
     inspectorWindow.innerHTML = `
         <div class="inspector-section">
@@ -1096,6 +1158,11 @@ form.addEventListener('submit', async (e) => {
                      if (typeof ConversationManager !== 'undefined') {
                          ConversationManager.loadSessions();
                      }
+
+                     // Auto-sync agent workspace modifications
+                     if (typeof syncAgentWorkspaceChanges === 'function') {
+                         syncAgentWorkspaceChanges();
+                     }
                  }
             }
         }
@@ -1419,6 +1486,11 @@ async function sendApproval(approved, filepath, tool,
                             if (st) st.textContent = 'Workflow resumed and completed';
                         }
                         addLog('Resumed workflow completed.', 'SUCCESS');
+                        
+                        // Auto-sync agent workspace modifications
+                        if (typeof syncAgentWorkspaceChanges === 'function') {
+                            syncAgentWorkspaceChanges();
+                        }
                     } else if (evt.event === 'error') {
                         addLog('Resume stream error: ' + evt.message, 'ERROR');
                         if (capturedBodyContainer) capturedBodyContainer.innerHTML = `<span style="color:var(--accent-red);">❌ Error during resume: ${escapeHtml(evt.message)}</span>`;
@@ -1800,8 +1872,14 @@ const ConversationManager = (() => {
 
     // ---- helpers ----
     function relativeTime(dateStr) {
+        if (!dateStr) return 'unknown';
         const now  = Date.now();
-        const then = new Date(dateStr + (dateStr.endsWith('Z') ? '' : 'Z')).getTime();
+        const str = String(dateStr);
+        // Replace space with T to make it ISO 8601 compliant for all browser JS engines
+        const formattedStr = str.includes(' ') && !str.includes('T') ? str.replace(' ', 'T') : str;
+        const suffix = formattedStr.endsWith('Z') ? '' : 'Z';
+        const then = new Date(formattedStr + suffix).getTime();
+        if (isNaN(then)) return 'some time ago';
         const diff = Math.floor((now - then) / 1000);
         if (diff < 60)       return 'just now';
         if (diff < 3600)     return Math.floor(diff / 60) + 'm ago';
@@ -1821,7 +1899,7 @@ const ConversationManager = (() => {
         // Clear dynamic items (keep empty placeholder)
         convList.querySelectorAll('.conv-item').forEach(el => el.remove());
 
-        if (!sessions || sessions.length === 0) {
+        if (!Array.isArray(sessions) || sessions.length === 0) {
             if (convEmpty) convEmpty.style.display = 'block';
             return;
         }
@@ -1892,12 +1970,18 @@ const ConversationManager = (() => {
         if (statT) statT.textContent = '0ms';
         if (statM) statM.textContent = '0';
 
-        // Reset all visual graph nodes
-        document.querySelectorAll('.agent-graph-viz .graph-node').forEach(node => {
-            node.classList.remove('active', 'completed');
-            const statusEl = node.querySelector('.node-status');
-            if (statusEl) statusEl.textContent = 'Idle';
-        });
+        // Reset agent execution trace timeline
+        const timelineContainer = document.getElementById('agent-trace-timeline');
+        if (timelineContainer) {
+            timelineContainer.innerHTML = `
+                <div class="trace-empty-state">
+                    <div class="trace-empty-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="trace-spinner-svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+                    </div>
+                    <p>Awaiting query execution to generate real-time agent tracing...</p>
+                </div>
+            `;
+        }
 
         syncDropdownWithRadio();
 
@@ -1941,12 +2025,18 @@ const ConversationManager = (() => {
             if (statT) statT.textContent = '0ms';
             if (statM) statM.textContent = '0';
 
-            // Reset all visual graph nodes
-            document.querySelectorAll('.agent-graph-viz .graph-node').forEach(node => {
-                node.classList.remove('active', 'completed');
-                const statusEl = node.querySelector('.node-status');
-                if (statusEl) statusEl.textContent = 'Idle';
-            });
+            // Reset agent execution trace timeline
+            const timelineContainer = document.getElementById('agent-trace-timeline');
+            if (timelineContainer) {
+                timelineContainer.innerHTML = `
+                    <div class="trace-empty-state">
+                        <div class="trace-empty-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="trace-spinner-svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+                        </div>
+                        <p>Awaiting query execution to generate real-time agent tracing...</p>
+                    </div>
+                `;
+            }
 
             syncDropdownWithRadio();
 
@@ -2100,4 +2190,932 @@ if (ConversationManager && ConversationManager.initPromise) {
     loadHistory();
 }
 AppState.updateContextLimit(parseInt(contextLimitSlider.value));
+
+
+// ================================================================
+// IDE SCRIPT INJECTION (ACTIVITY BAR, TREE EXPLORER, TABS & WRITER)
+// ================================================================
+
+(function() {
+    // ---- IDE State ----
+    let openTabs = [];
+    let activeTab = null;
+    const expandedFolders = new Set(JSON.parse(localStorage.getItem('ide_expanded_folders') || '["workspace"]'));
+    let activeSidebarPanel = 'explorer';
+    let editMode = false;
+    let pendingDiskContent = null; // Store incoming disk modifications for conflict resolution
+
+    // ---- DOM Elements ----
+    const explorerTreeNode = document.getElementById('explorer-tree');
+    const editorTabsList = document.getElementById('editor-tabs-list');
+    const editorWelcome = document.getElementById('editor-welcome');
+    const editorActiveFile = document.getElementById('editor-active-file');
+    const editorLineNumbers = document.getElementById('editor-line-numbers');
+    const editorCodeDisplay = document.getElementById('editor-code-display');
+    const editorReaderView = document.getElementById('editor-reader-view');
+    const editorTextarea = document.getElementById('editor-textarea');
+    const editorImagePreview = document.getElementById('editor-image-preview');
+    const editorPreviewImg = document.getElementById('editor-preview-img');
+    const editorEditBtn = document.getElementById('editor-edit-btn');
+    const editorSaveBtn = document.getElementById('editor-save-btn');
+    const editorConflictOverlay = document.getElementById('editor-conflict-overlay');
+    const btnConflictReload = document.getElementById('btn-conflict-reload');
+    const btnConflictKeep = document.getElementById('btn-conflict-keep');
+    const statusActiveFile = document.getElementById('status-active-file');
+    const statusSyncIndicator = document.getElementById('status-sync-indicator');
+    const mainGrid = document.querySelector('.main-grid');
+    const ideSidebar = document.getElementById('ide-sidebar');
+    const ideBottomPanel = document.getElementById('ide-bottom-panel');
+
+    // Button actions in bottom panel
+    const toggleTerminalBtn = document.getElementById('toggle-terminal-btn');
+    const closeTerminalBtn = document.getElementById('close-terminal-btn');
+
+    // ---- 1. Activity Bar Toggles ----
+    document.querySelectorAll('.activity-btn[data-panel]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const panelName = btn.dataset.panel;
+            
+            // If settings btn, just show settings toast or placeholder
+            if (panelName === 'settings') return;
+
+            const isAlreadyActive = btn.classList.contains('active') && !mainGrid.classList.contains('sidebar-collapsed');
+
+            // Deactivate all buttons & panels
+            document.querySelectorAll('.activity-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.ide-sidebar-panel').forEach(p => p.classList.remove('active'));
+
+            if (isAlreadyActive) {
+                mainGrid.classList.add('sidebar-collapsed');
+            } else {
+                mainGrid.classList.remove('sidebar-collapsed');
+                btn.classList.add('active');
+                const targetPanel = document.getElementById(`panel-${panelName}`);
+                if (targetPanel) targetPanel.classList.add('active');
+                activeSidebarPanel = panelName;
+
+                if (panelName === 'git') {
+                    updateGitStatus();
+                }
+            }
+        });
+    });
+
+    // Toggle Chat Panel (reusing hud-toggle-btn!)
+    const chatToggleBtns = document.querySelectorAll('#hud-toggle-btn');
+    const activityChatBtn = document.getElementById('activity-chat-btn');
+
+    function updateChatBtnState() {
+        if (!mainGrid) return;
+        const collapsed = mainGrid.classList.contains('chat-collapsed');
+        if (activityChatBtn) {
+            if (collapsed) {
+                activityChatBtn.classList.remove('active');
+            } else {
+                activityChatBtn.classList.add('active');
+            }
+        }
+    }
+
+    // Run once on load to sync initial state
+    updateChatBtnState();
+
+    chatToggleBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            mainGrid.classList.toggle('chat-collapsed');
+            updateChatBtnState();
+            showToast(mainGrid.classList.contains('chat-collapsed') ? "Chat panel docked" : "Chat panel visible", "info");
+        });
+    });
+
+    if (activityChatBtn) {
+        activityChatBtn.addEventListener('click', () => {
+            mainGrid.classList.toggle('chat-collapsed');
+            updateChatBtnState();
+            if (!mainGrid.classList.contains('chat-collapsed')) {
+                const chatInput = document.getElementById('comm-input');
+                if (chatInput) chatInput.focus();
+            }
+            showToast(mainGrid.classList.contains('chat-collapsed') ? "Chat panel docked" : "Chat panel visible", "info");
+        });
+    }
+
+    // Keyboard shortcut to toggle chat panel (Ctrl+I)
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+            e.preventDefault();
+            if (mainGrid) {
+                mainGrid.classList.toggle('chat-collapsed');
+                updateChatBtnState();
+                if (!mainGrid.classList.contains('chat-collapsed')) {
+                    const chatInput = document.getElementById('comm-input');
+                    if (chatInput) chatInput.focus();
+                }
+                showToast(mainGrid.classList.contains('chat-collapsed') ? "Chat panel docked" : "Chat panel visible", "info");
+            }
+        }
+    });
+
+    // ---- 2. Collapsible Bottom Panel ----
+    // Bottom Tab buttons
+    document.querySelectorAll('.bottom-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.dataset.tab;
+            
+            // Update active state on tab buttons
+            document.querySelectorAll('.bottom-tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Update active pane
+            document.querySelectorAll('.bottom-panel-pane').forEach(p => p.classList.remove('active'));
+            const targetPane = document.getElementById(tabId);
+            if (targetPane) targetPane.classList.add('active');
+
+            // Ensure panel is expanded
+            if (ideBottomPanel) {
+                ideBottomPanel.classList.remove('collapsed');
+            }
+
+            if (tabId === 'bottom-terminal') {
+                initTerminal();
+            }
+        });
+    });
+
+    if (toggleTerminalBtn) {
+        toggleTerminalBtn.addEventListener('click', () => {
+            ideBottomPanel.classList.toggle('maximized');
+        });
+    }
+
+    if (closeTerminalBtn) {
+        closeTerminalBtn.addEventListener('click', () => {
+            ideBottomPanel.classList.add('collapsed');
+        });
+    }
+
+    // Toggle bottom panel shortcut Ctrl + `
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === '`') {
+            e.preventDefault();
+            if (ideBottomPanel) {
+                ideBottomPanel.classList.toggle('collapsed');
+            }
+        }
+    });
+
+    // ---- 3. File Explorer Rendering ----
+    async function fetchWorkspaceFiles() {
+        try {
+            const res = await fetch(`${API_BASE}/workspace/files`);
+            if (!res.ok) throw new Error('Failed to load file list');
+            return await res.json();
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
+    }
+
+    function buildTree(paths) {
+        const root = {};
+        for (const p of paths) {
+            const parts = p.split('/');
+            let current = root;
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (!current[part]) {
+                    current[part] = {
+                        name: part,
+                        path: parts.slice(0, i + 1).join('/'),
+                        isDir: i < parts.length - 1,
+                        children: {}
+                    };
+                }
+                current = current[part].children;
+            }
+        }
+        return root;
+    }
+
+    function renderTreeNodes(nodes, container, depth = 0) {
+        const sortedKeys = Object.keys(nodes).sort((a, b) => {
+            const nodeA = nodes[a];
+            const nodeB = nodes[b];
+            if (nodeA.isDir && !nodeB.isDir) return -1;
+            if (!nodeA.isDir && nodeB.isDir) return 1;
+            return a.localeCompare(b);
+        });
+
+        for (const key of sortedKeys) {
+            const node = nodes[key];
+            const itemEl = document.createElement('div');
+            itemEl.className = 'explorer-item';
+            if (node.isDir && expandedFolders.has(node.path)) {
+                itemEl.classList.add('expanded');
+            }
+            
+            if (activeTab && activeTab.path === node.path) {
+                itemEl.classList.add('active-file-item');
+            }
+
+            for (let i = 0; i < depth; i++) {
+                const indent = document.createElement('span');
+                indent.className = 'explorer-item-indent';
+                itemEl.appendChild(indent);
+            }
+
+            const chevronSpan = document.createElement('span');
+            chevronSpan.className = 'explorer-item-icon';
+            if (node.isDir) {
+                chevronSpan.innerHTML = `
+                    <svg class="explorer-item-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                `;
+            }
+            itemEl.appendChild(chevronSpan);
+
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'explorer-item-icon';
+            if (node.isDir) {
+                iconSpan.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-indigo)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                `;
+            } else {
+                const ext = node.name.split('.').pop().toLowerCase();
+                let color = 'var(--text-secondary)';
+                if (ext === 'html') color = 'var(--accent-rose)';
+                else if (ext === 'css') color = 'var(--accent-cyan)';
+                else if (ext === 'js' || ext === 'ts') color = 'var(--accent-amber)';
+                else if (ext === 'py') color = 'var(--accent-indigo)';
+                else if (ext === 'md') color = '#a78bfa';
+
+                iconSpan.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                `;
+            }
+            itemEl.appendChild(iconSpan);
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'explorer-item-name';
+            nameSpan.textContent = node.name;
+            itemEl.appendChild(nameSpan);
+
+            container.appendChild(itemEl);
+
+            if (node.isDir) {
+                itemEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (expandedFolders.has(node.path)) {
+                        expandedFolders.delete(node.path);
+                    } else {
+                        expandedFolders.add(node.path);
+                    }
+                    localStorage.setItem('ide_expanded_folders', JSON.stringify([...expandedFolders]));
+                    refreshExplorer();
+                });
+
+                if (expandedFolders.has(node.path)) {
+                    renderTreeNodes(node.children, container, depth + 1);
+                }
+            } else {
+                itemEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openFile(node.path);
+                });
+            }
+        }
+    }
+
+    async function refreshExplorer() {
+        if (!explorerTreeNode) return;
+        const files = await fetchWorkspaceFiles();
+        const tree = buildTree(files);
+        explorerTreeNode.innerHTML = '';
+        renderTreeNodes(tree, explorerTreeNode);
+    }
+
+    const refreshBtn = document.getElementById('refresh-explorer-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            refreshExplorer();
+            showToast('Refreshed file explorer', 'success');
+        });
+    }
+
+    // Expose sync function globally
+    window.syncAgentWorkspaceChanges = async function() {
+        await refreshExplorer();
+        if (activeTab) {
+            try {
+                const res = await fetch(`${API_BASE}/workspace/file?path=${encodeURIComponent(activeTab.path)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!data.is_binary && data.content !== activeTab.originalContent) {
+                        showConflictOverlay(data.content);
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to verify disk conflict:', e);
+            }
+        }
+    };
+
+    // ---- 4. File Viewport & Tabs Manager ----
+    async function openFile(path) {
+        hideConflictOverlay();
+
+        let tab = openTabs.find(t => t.path === path);
+        if (tab) {
+            setActiveTab(tab);
+            return;
+        }
+
+        try {
+            showToast(`Loading ${path.split('/').pop()}...`, 'info');
+            const res = await fetch(`${API_BASE}/workspace/file?path=${encodeURIComponent(path)}`);
+            if (!res.ok) throw new Error('Could not load workspace file');
+            const data = await res.json();
+
+            tab = {
+                path: path,
+                name: path.split('/').pop(),
+                content: data.content,
+                originalContent: data.content,
+                isDirty: false,
+                isBinary: data.is_binary || false,
+                mimeType: data.mime_type || 'text/plain'
+            };
+
+            openTabs.push(tab);
+            setActiveTab(tab);
+            renderTabsList();
+            refreshExplorer();
+        } catch (err) {
+            showToast(`Error: ${err.message}`, 'error');
+        }
+    }
+
+    function renderTabsList() {
+        if (!editorTabsList) return;
+        editorTabsList.innerHTML = '';
+        
+        openTabs.forEach(tab => {
+            const tabEl = document.createElement('div');
+            tabEl.className = 'editor-tab';
+            if (activeTab && activeTab.path === tab.path) {
+                tabEl.classList.add('active');
+            }
+            if (tab.isDirty) {
+                tabEl.classList.add('dirty');
+            }
+
+            const label = document.createElement('span');
+            label.textContent = tab.name;
+            tabEl.appendChild(label);
+
+            const dirtyDot = document.createElement('span');
+            dirtyDot.className = 'editor-tab-dirty';
+            tabEl.appendChild(dirtyDot);
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'editor-tab-close';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closeTab(tab.path);
+            });
+            tabEl.appendChild(closeBtn);
+
+            tabEl.addEventListener('click', () => {
+                setActiveTab(tab);
+            });
+
+            editorTabsList.appendChild(tabEl);
+        });
+    }
+
+    function setActiveTab(tab) {
+        activeTab = tab;
+        editMode = false;
+        
+        hideConflictOverlay();
+        renderTabsList();
+
+        if (statusActiveFile) {
+            statusActiveFile.textContent = tab.path;
+        }
+
+        if (editorWelcome) editorWelcome.style.display = 'none';
+        if (editorActiveFile) editorActiveFile.style.display = 'flex';
+
+        if (tab.isBinary) {
+            if (editorImagePreview) editorImagePreview.style.display = 'flex';
+            if (editorReaderView) editorReaderView.style.display = 'none';
+            if (editorTextarea) editorTextarea.style.display = 'none';
+            if (editorPreviewImg) editorPreviewImg.src = tab.content;
+            if (editorEditBtn) editorEditBtn.style.display = 'none';
+            if (editorSaveBtn) editorSaveBtn.style.display = 'none';
+        } else {
+            if (editorImagePreview) editorImagePreview.style.display = 'none';
+            if (editorReaderView) editorReaderView.style.display = 'flex';
+            if (editorTextarea) editorTextarea.style.display = 'none';
+            if (editorEditBtn) {
+                editorEditBtn.style.display = 'flex';
+                editorEditBtn.querySelector('span').textContent = 'Edit';
+            }
+            if (editorSaveBtn) {
+                editorSaveBtn.style.display = tab.isDirty ? 'flex' : 'none';
+            }
+
+            if (editorTextarea) editorTextarea.value = tab.content;
+            updateReaderView(tab.content);
+        }
+
+        // Add visual indicator to explorer items
+        document.querySelectorAll('.explorer-item').forEach(el => {
+            const nameEl = el.querySelector('.explorer-item-name');
+            if (nameEl && nameEl.textContent === tab.name) {
+                el.classList.add('active-file-item');
+            } else {
+                el.classList.remove('active-file-item');
+            }
+        });
+    }
+
+    function updateReaderView(content) {
+        if (!editorLineNumbers || !editorCodeDisplay) return;
+        const lines = content.split('\n');
+        let numbersHtml = '';
+        for (let i = 1; i <= lines.length; i++) {
+            numbersHtml += `<div>${i}</div>`;
+        }
+        editorLineNumbers.innerHTML = numbersHtml;
+        editorCodeDisplay.textContent = content;
+    }
+
+    function closeTab(path) {
+        const tabIndex = openTabs.findIndex(t => t.path === path);
+        if (tabIndex === -1) return;
+
+        const tab = openTabs[tabIndex];
+        if (tab.isDirty) {
+            if (!confirm(`Save changes to ${tab.name} before closing?`)) {
+                return;
+            }
+        }
+
+        openTabs.splice(tabIndex, 1);
+        renderTabsList();
+
+        if (activeTab && activeTab.path === path) {
+            if (openTabs.length > 0) {
+                const nextActiveIndex = Math.max(0, tabIndex - 1);
+                setActiveTab(openTabs[nextActiveIndex]);
+            } else {
+                activeTab = null;
+                if (editorWelcome) editorWelcome.style.display = 'flex';
+                if (editorActiveFile) editorActiveFile.style.display = 'none';
+                if (statusActiveFile) statusActiveFile.textContent = 'No File Open';
+            }
+        }
+        refreshExplorer();
+    }
+
+    if (editorEditBtn) {
+        editorEditBtn.addEventListener('click', () => {
+            if (!activeTab || activeTab.isBinary) return;
+
+            editMode = !editMode;
+            if (editMode) {
+                if (editorReaderView) editorReaderView.style.display = 'none';
+                if (editorTextarea) {
+                    editorTextarea.style.display = 'block';
+                    editorTextarea.focus();
+                }
+                editorEditBtn.querySelector('span').textContent = 'Preview';
+            } else {
+                const currentContent = editorTextarea.value;
+                activeTab.content = currentContent;
+                updateReaderView(currentContent);
+                if (editorReaderView) editorReaderView.style.display = 'flex';
+                if (editorTextarea) editorTextarea.style.display = 'none';
+                editorEditBtn.querySelector('span').textContent = 'Edit';
+            }
+        });
+    }
+
+    if (editorTextarea) {
+        editorTextarea.addEventListener('input', () => {
+            if (!activeTab) return;
+            const hasChanged = editorTextarea.value !== activeTab.originalContent;
+            activeTab.isDirty = hasChanged;
+            activeTab.content = editorTextarea.value;
+            
+            if (editorSaveBtn) {
+                editorSaveBtn.style.display = hasChanged ? 'flex' : 'none';
+            }
+            renderTabsList();
+        });
+    }
+
+    // ---- 5. Safe Writing to Disk ----
+    async function saveActiveFile() {
+        if (!activeTab || activeTab.isBinary || !activeTab.isDirty) return;
+
+        const contentToSave = editorTextarea.style.display === 'block' ? editorTextarea.value : activeTab.content;
+
+        if (statusSyncIndicator) statusSyncIndicator.textContent = 'Saving...';
+        try {
+            const res = await fetch(`${API_BASE}/workspace/write`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    path: activeTab.path,
+                    content: contentToSave
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Save failed');
+            }
+
+            activeTab.originalContent = contentToSave;
+            activeTab.content = contentToSave;
+            activeTab.isDirty = false;
+            
+            if (editorSaveBtn) editorSaveBtn.style.display = 'none';
+            if (statusSyncIndicator) statusSyncIndicator.textContent = 'Synced';
+            
+            renderTabsList();
+            updateReaderView(contentToSave);
+            showToast(`✓ Saved ${activeTab.name}`, 'success');
+            updateGitStatus();
+        } catch (err) {
+            showToast(`Error saving: ${err.message}`, 'error');
+            if (statusSyncIndicator) statusSyncIndicator.textContent = 'Sync Error';
+        }
+    }
+
+    if (editorSaveBtn) {
+        editorSaveBtn.addEventListener('click', saveActiveFile);
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            saveActiveFile();
+        }
+    });
+
+    // ---- 6. Conflict Overlay Mechanics ----
+    function showConflictOverlay(diskContent) {
+        pendingDiskContent = diskContent;
+        if (editorConflictOverlay) {
+            editorConflictOverlay.style.display = 'flex';
+        }
+    }
+
+    function hideConflictOverlay() {
+        pendingDiskContent = null;
+        if (editorConflictOverlay) {
+            editorConflictOverlay.style.display = 'none';
+        }
+    }
+
+    if (btnConflictReload && btnConflictKeep) {
+        btnConflictReload.addEventListener('click', () => {
+            if (activeTab && pendingDiskContent !== null) {
+                activeTab.originalContent = pendingDiskContent;
+                activeTab.content = pendingDiskContent;
+                activeTab.isDirty = false;
+                
+                if (editorTextarea) editorTextarea.value = pendingDiskContent;
+                updateReaderView(pendingDiskContent);
+                
+                if (editorSaveBtn) editorSaveBtn.style.display = 'none';
+                renderTabsList();
+                showToast('Reloaded file from disk', 'success');
+            }
+            hideConflictOverlay();
+        });
+
+        btnConflictKeep.addEventListener('click', () => {
+            if (activeTab) {
+                activeTab.isDirty = true;
+                if (editorSaveBtn) editorSaveBtn.style.display = 'flex';
+                renderTabsList();
+            }
+            hideConflictOverlay();
+        });
+    }
+
+    // ---- 7. Interactive Terminal & WebSocket Setup ----
+    let term = null;
+    let termSocket = null;
+    let termFitAddon = null;
+
+    function initTerminal() {
+        if (term) return; // Already initialized
+
+        const container = document.getElementById('terminal-container');
+        if (!container) return;
+
+        term = new Terminal({
+            theme: {
+                background: '#282a36',
+                foreground: '#f8f8f2',
+                cursor: '#f8f8f2',
+                black: '#21222c',
+                red: '#ff5555',
+                green: '#50fa7b',
+                yellow: '#f1fa8c',
+                blue: '#bd93f9',
+                magenta: '#ff79c6',
+                cyan: '#8be9fd',
+                white: '#ffffff',
+                brightBlack: '#6272a4',
+                brightRed: '#ff6e6e',
+                brightGreen: '#69ff94',
+                brightYellow: '#ffffa5',
+                brightBlue: '#d6acff',
+                brightMagenta: '#ff92df',
+                brightCyan: '#a4ffff',
+                brightWhite: '#ffffff'
+            },
+            fontFamily: 'var(--font-mono)',
+            fontSize: 13,
+            lineHeight: 1.4,
+            cursorBlink: true
+        });
+
+        termFitAddon = new FitAddon.FitAddon();
+        term.loadAddon(termFitAddon);
+        term.open(container);
+        
+        setTimeout(() => {
+            if (termFitAddon) termFitAddon.fit();
+        }, 100);
+
+        const resizeObserver = new ResizeObserver(() => {
+            if (termFitAddon) termFitAddon.fit();
+        });
+        resizeObserver.observe(container);
+
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/terminal`;
+        
+        term.write('\r\nConnecting to backend shell...\r\n');
+        
+        termSocket = new WebSocket(wsUrl);
+
+        termSocket.onopen = () => {
+            term.write('\r\n[Shell Connection Connected]\r\n\n');
+        };
+
+        termSocket.onmessage = (event) => {
+            term.write(event.data);
+        };
+
+        termSocket.onclose = () => {
+            term.write('\r\n[Shell Connection Closed]\r\n');
+            term = null;
+            termSocket = null;
+        };
+
+        termSocket.onerror = (err) => {
+            term.write(`\r\n[Shell Connection Error]\r\n`);
+        };
+
+        term.onData((data) => {
+            if (termSocket && termSocket.readyState === WebSocket.OPEN) {
+                termSocket.send(data);
+            }
+        });
+    }
+
+    // Adjust fit on maximize
+    if (toggleTerminalBtn) {
+        toggleTerminalBtn.addEventListener('click', () => {
+            setTimeout(() => {
+                if (termFitAddon) termFitAddon.fit();
+            }, 150);
+        });
+    }
+
+    // ---- 8. Git / Source Control Sidebar Panel ----
+    async function updateGitStatus() {
+        const noRepoContainer = document.getElementById('git-no-repo');
+        const repoActiveContainer = document.getElementById('git-repo-active');
+        const currentBranchSpan = document.getElementById('git-current-branch');
+        const changesCountSpan = document.getElementById('git-changes-count');
+        const changesList = document.getElementById('git-changes-list');
+
+        if (!noRepoContainer || !repoActiveContainer) return;
+
+        try {
+            const res = await fetch('/git/status');
+            const data = await res.json();
+
+            if (!data.is_repo) {
+                noRepoContainer.style.display = 'block';
+                repoActiveContainer.style.display = 'none';
+            } else {
+                noRepoContainer.style.display = 'none';
+                repoActiveContainer.style.display = 'block';
+
+                if (currentBranchSpan) currentBranchSpan.textContent = data.branch || 'master';
+                if (changesCountSpan) changesCountSpan.textContent = data.files.length;
+
+                if (changesList) {
+                    changesList.innerHTML = '';
+                    if (data.files.length === 0) {
+                        changesList.innerHTML = `<div class="git-empty-msg" style="padding: 12px 0; font-size: 0.72rem; color: var(--text-secondary); font-style: italic;">No uncommitted changes.</div>`;
+                    } else {
+                        data.files.forEach(file => {
+                            const name = file.path.split('/').pop();
+                            const pathOnly = file.path.substring(0, file.path.lastIndexOf('/')) || '.';
+                            
+                            const item = document.createElement('div');
+                            item.className = 'git-change-item';
+                            item.innerHTML = `
+                                <div class="git-file-info">
+                                    <span class="git-file-name" title="${file.path}">${name}</span>
+                                    <span class="git-file-path" title="${file.path}">${pathOnly}</span>
+                                </div>
+                                <div class="git-item-actions">
+                                    <button type="button" class="git-action-btn stage-toggle-btn" title="${file.raw.startsWith(' ') ? 'Stage Change' : 'Unstage Change'}">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 11px; height: 11px;">
+                                            ${file.raw.startsWith(' ') ? '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>' : '<line x1="5" y1="12" x2="19" y2="12"/>'}
+                                        </svg>
+                                    </button>
+                                </div>
+                                <span class="git-status-badge ${file.status}" title="${file.status.toUpperCase()}">${file.status.substring(0, 1).toUpperCase()}</span>
+                            `;
+
+                            const stageBtn = item.querySelector('.stage-toggle-btn');
+                            stageBtn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const stage = file.raw.startsWith(' ');
+                                try {
+                                    const stageRes = await fetch('/git/stage', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ file_path: file.path, stage: stage })
+                                    });
+                                    if (stageRes.ok) {
+                                        updateGitStatus();
+                                    } else {
+                                        const err = await stageRes.json();
+                                        showToast(err.detail || "Stage action failed", "error");
+                                    }
+                                } catch (err) {
+                                    showToast("Failed to perform staging", "error");
+                                }
+                            });
+
+                            changesList.appendChild(item);
+                        });
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching git status", err);
+        }
+    }
+
+    const gitInitBtn = document.getElementById('git-init-btn');
+    const gitCloneBtn = document.getElementById('git-clone-btn');
+    const gitCloneUrl = document.getElementById('git-clone-url');
+    const gitClonePat = document.getElementById('git-clone-pat');
+    const gitCommitBtn = document.getElementById('git-commit-btn');
+    const gitCommitMsg = document.getElementById('git-commit-msg');
+    const gitSyncBtn = document.getElementById('git-sync-btn');
+    const gitRefreshBtn = document.getElementById('git-refresh-btn');
+
+    if (gitRefreshBtn) {
+        gitRefreshBtn.addEventListener('click', () => {
+            updateGitStatus();
+            showToast("Git status refreshed", "info");
+        });
+    }
+
+    if (gitInitBtn) {
+        gitInitBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/git/init', { method: 'POST' });
+                if (res.ok) {
+                    showToast("Initialized Git repository", "success");
+                    updateGitStatus();
+                } else {
+                    const err = await res.json();
+                    showToast(err.detail || "Git init failed", "error");
+                }
+            } catch (err) {
+                showToast("Init error", "error");
+            }
+        });
+    }
+
+    if (gitCloneBtn) {
+        gitCloneBtn.addEventListener('click', async () => {
+            const url = gitCloneUrl ? gitCloneUrl.value.trim() : "";
+            const pat = gitClonePat ? gitClonePat.value.trim() : "";
+            if (!url) {
+                showToast("Please enter a repository URL", "warning");
+                return;
+            }
+            showToast("Cloning repository...", "info");
+            gitCloneBtn.disabled = true;
+            try {
+                const res = await fetch('/git/clone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, pat: pat || null })
+                });
+                if (res.ok) {
+                    showToast("Repository cloned successfully", "success");
+                    if (gitCloneUrl) gitCloneUrl.value = "";
+                    if (gitClonePat) gitClonePat.value = "";
+                    updateGitStatus();
+                    refreshExplorer();
+                } else {
+                    const err = await res.json();
+                    showToast(err.detail || "Clone failed", "error");
+                }
+            } catch (err) {
+                showToast("Clone request failed", "error");
+            } finally {
+                gitCloneBtn.disabled = false;
+            }
+        });
+    }
+
+    if (gitCommitBtn) {
+        gitCommitBtn.addEventListener('click', async () => {
+            const msg = gitCommitMsg ? gitCommitMsg.value.trim() : "";
+            if (!msg) {
+                showToast("Please enter a commit message", "warning");
+                return;
+            }
+            try {
+                const res = await fetch('/git/commit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg })
+                });
+                if (res.ok) {
+                    showToast("Changes committed successfully", "success");
+                    if (gitCommitMsg) gitCommitMsg.value = "";
+                    updateGitStatus();
+                } else {
+                    const err = await res.json();
+                    showToast(err.detail || "Commit failed", "error");
+                }
+            } catch (err) {
+                showToast("Commit request failed", "error");
+            }
+        });
+    }
+
+    if (gitCommitMsg) {
+        gitCommitMsg.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                if (gitCommitBtn) gitCommitBtn.click();
+            }
+        });
+    }
+
+    if (gitSyncBtn) {
+        gitSyncBtn.addEventListener('click', async () => {
+            showToast("Syncing changes (pull & push)...", "info");
+            gitSyncBtn.disabled = true;
+            try {
+                const res = await fetch('/git/sync', { method: 'POST' });
+                if (res.ok) {
+                    showToast("Sync completed", "success");
+                    updateGitStatus();
+                } else {
+                    const err = await res.json();
+                    showToast(err.detail || "Sync failed", "error");
+                }
+            } catch (err) {
+                showToast("Sync connection failed", "error");
+            } finally {
+                gitSyncBtn.disabled = false;
+            }
+        });
+    }
+
+    refreshExplorer();
+    updateGitStatus();
+})();
 

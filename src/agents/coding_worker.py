@@ -4,8 +4,6 @@ import logging
 from typing import List, Dict, Optional
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
-from langgraph.types import Command
-from langchain_groq import ChatGroq
 
 from src.tools.coding_tools import read_files as _read_files
 from src.tools.coding_tools import search_code as _search_code

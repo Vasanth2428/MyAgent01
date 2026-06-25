@@ -11,7 +11,7 @@ import os
 import json
 import logging
 import time
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 
 logger = logging.getLogger("RAG.BlackboardRef")
 

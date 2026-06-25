@@ -1,5 +1,5 @@
 # State schema for 2-Pipeline Engine Architecture
-from typing import List, Literal, Optional, Annotated, Dict
+from typing import List, Optional, Annotated, Dict
 from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage
 

@@ -6,7 +6,6 @@ know what's available to search through and can list sources, topics, and
 document domains when asked.
 """
 
-import os
 import logging
 from typing import List, Dict, Set
 

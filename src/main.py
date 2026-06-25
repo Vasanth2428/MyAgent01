@@ -22,7 +22,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MultiAgent.Main")
 
 from src.graph.workflow import build_multi_agent_graph, get_graph_config
-from src.graph.checkpointer import setup_checkpointer
 from langchain_core.messages import HumanMessage
 from src.tools.safety_filters import sanitize_user_input
 from src.core.logging_setup import session_id_var

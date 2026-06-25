@@ -1,7 +1,5 @@
 # Web search worker node - fetches live web data.
-import os
 import logging
-from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 logger = logging.getLogger("MultiAgent.WebWorker")
@@ -37,7 +35,7 @@ def web_worker_node(state: dict, web_search_tool: callable = None) -> dict:
     from src.tools.safety_filters import sanitize_user_input, validate_tool_output, truncate_results
     
     if web_search_tool is None:
-        from src.tools.web_search_tool import web_search, format_search_results
+        from src.tools.web_search_tool import web_search
         web_search_tool = web_search
     
     current_task = state.get("current_task", "")

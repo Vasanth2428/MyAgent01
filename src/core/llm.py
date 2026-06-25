@@ -1,8 +1,6 @@
 # LLM Service - Talking to the AI Assistant
 
 import os
-import time
-import random
 import logging
 from typing import Optional, List, Dict
 import groq

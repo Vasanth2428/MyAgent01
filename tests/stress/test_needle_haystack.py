@@ -6,8 +6,6 @@ Tests with 100 noise documents to verify:
 2. Needle survives compression
 3. Answer contains needle fact
 """
-import pytest
-import asyncio
 from src.core.compressor import Compressor
 from src.core.reranker import NeuralReranker
 

@@ -197,7 +197,6 @@ async def scrape_multiple_pages_async(urls: List[str], max_chars: int = 6000, ma
     Asynchronously fetches multiple URLs concurrently with controlled concurrency.
     Returns list of scraped texts in the same order as input URLs.
     """
-    import aiohttp
 
     async def scrape_with_semaphore(url: str, sem: asyncio.Semaphore) -> str:
         async with sem:

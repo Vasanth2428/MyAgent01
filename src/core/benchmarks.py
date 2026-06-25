@@ -15,7 +15,7 @@ system is working correctly. Each category tests a different feature:
 Run these tests after changes to make sure nothing got worse.
 """
 
-from typing import List, Dict
+from typing import List
 from dataclasses import dataclass
 
 

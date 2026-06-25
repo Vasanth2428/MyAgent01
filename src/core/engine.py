@@ -16,16 +16,14 @@ import logging
 import os
 import time
 import asyncio
-from typing import Dict, Generator, AsyncGenerator, Optional, Any, List
+from typing import Dict, Generator, AsyncGenerator, Optional, List
 import tiktoken
 from src.core.llm import LLMService
 
 from src.core.config import (
-    LLM_MODEL, LLM_TEMPERATURE, CONTEXT_WINDOW_LIMIT,
-    TOKENIZER_ENCODING, TOTAL_CONTEXT_BUDGET, MEMORY_TOKEN_BUDGET,
-    MIN_KNOWLEDGE_BUDGET, MAX_CANDIDATES, EXPANSION_MIN_WORDS,
-    SAFETY_CHAR_LIMIT, COST_PER_INPUT_TOKEN, COST_PER_OUTPUT_TOKEN,
-    PipelineConfig
+    LLM_MODEL, LLM_TEMPERATURE, TOKENIZER_ENCODING, TOTAL_CONTEXT_BUDGET, MEMORY_TOKEN_BUDGET,
+    MIN_KNOWLEDGE_BUDGET, EXPANSION_MIN_WORDS,
+    SAFETY_CHAR_LIMIT, PipelineConfig
 )
 from src.core.retriever import WeaviateRetriever
 from src.core.persistence import PersistentMemoryStore
@@ -1083,8 +1081,6 @@ class RAGContextEngine:
         """
         Asynchronous streaming query endpoint. Yields progress updates and LLM output tokens.
         """
-        from typing import Dict as TypedDict
-        import time as time_module
         
         if mode == "agentic":
             async for event in self._run_multi_agent_stream_async(query, session_id, source_filter, context_limit=context_limit, bypass_hitl=bypass_hitl):

@@ -1,6 +1,5 @@
-import pytest
 from unittest.mock import Mock, patch
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from src.agents.scraper_worker import scraper_worker_node
 from src.agents.critic_worker import critic_worker_node
 

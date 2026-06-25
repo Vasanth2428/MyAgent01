@@ -1,7 +1,5 @@
 # RAG worker node - strictly document-only answers.
-import os
 import logging
-from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from src.core.config import RAG_WORKER_MODEL_PRIMARY, RAG_WORKER_MODEL_FALLBACK

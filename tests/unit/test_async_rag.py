@@ -1,13 +1,9 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
-import asyncio
-import os
 
-from src.core.llm import LLMService
 from src.core.expander import QueryExpander
 from src.core.hyde import HyDEGenerator
 from src.core.services import RetrievalService, GenerationService
-from src.core.engine import RAGContextEngine
 
 class TestAsyncRAG(unittest.IsolatedAsyncioTestCase):
 

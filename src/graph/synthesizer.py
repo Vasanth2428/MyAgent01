@@ -1,6 +1,4 @@
-import os
 import logging
-from langgraph.graph import END
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from src.core.config import SYNTHESIZER_MODEL_PRIMARY, SYNTHESIZER_MODEL_FALLBACK

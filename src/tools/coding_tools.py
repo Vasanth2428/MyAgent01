@@ -6,7 +6,7 @@ import time
 import psutil
 import re
 import tempfile
-from typing import List, Dict, Optional
+from typing import List, Optional
 
 logger = logging.getLogger("MultiAgent.CodingTools")
 
@@ -286,7 +286,6 @@ def try_fuzzy_replace(content: str, target: str, replacement: str) -> Optional[s
 def edit_code_file(filepath: str, target: str, replacement: str) -> str:
     """Search and replace a specific block of text in a file inside `./workspace`. Creates file if missing."""
     from src.tools.rollback import backup_file
-    from src.core.code.validation import validate_syntax
     
     if not _is_safe_path(filepath):
         return f"Error: Access denied. Filepath '{filepath}' violates safety or path policies."

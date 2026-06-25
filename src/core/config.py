@@ -121,8 +121,7 @@ ENABLE_COMPRESSION = os.getenv("RAG_ENABLE_COMPRESSION", "true").lower() == 'tru
 LOW_CONFIDENCE_THRESHOLD = float(os.getenv("RAG_LOW_CONF_THRESH", "0.3"))
 MEDIUM_CONFIDENCE_THRESHOLD = float(os.getenv("RAG_MED_CONF_THRESH", "0.5"))
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 @dataclass
 class PipelineConfig:

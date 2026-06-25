@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 
 from src.agents.scraper_worker import safe_truncate_text
 from src.agents.code_critic_worker import code_critic_worker_node, CriticReport, CriticFinding

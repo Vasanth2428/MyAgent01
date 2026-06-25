@@ -4,11 +4,10 @@ Tests retrieval, reranking, HyDE, compression, and grounding verification.
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from src.core.evaluator import RAGEvaluator, GroundingVerifier
-from src.core.benchmarks import RAG_BENCHMARKS, BenchmarkQuery
+from src.core.benchmarks import RAG_BENCHMARKS
 from src.core.compressor import Compressor
-from src.core.engine import count_tokens
 
 
 class TestGroundingVerifier(unittest.TestCase):

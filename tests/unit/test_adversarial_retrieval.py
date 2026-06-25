@@ -1,4 +1,3 @@
-import pytest
 from src.core.reranker import NeuralReranker
 
 

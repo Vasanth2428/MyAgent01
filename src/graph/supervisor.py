@@ -8,11 +8,9 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from src.core.config import SUPERVISOR_MODEL_PRIMARY, SUPERVISOR_MODEL_FALLBACK
 from src.core.model_provider import build_model_with_fallback
 from src.graph.worker_output_cache import (
-    store_worker_output,
-    get_worker_output,
     get_worker_output_summary,
 )
-from src.core.blackboard_reference_store import store_reference, get_reference, compact_scratchpad
+from src.core.blackboard_reference_store import compact_scratchpad
 
 logger = logging.getLogger("MultiAgent.Supervisor")
 

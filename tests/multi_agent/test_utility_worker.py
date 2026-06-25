@@ -1,6 +1,5 @@
 # Tests for the utility worker.
-import pytest
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from src.agents.utility_worker import utility_worker_node
 
 

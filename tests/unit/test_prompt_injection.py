@@ -1,4 +1,3 @@
-import pytest
 import base64
 from src.core.security import sanitize_document_text
 

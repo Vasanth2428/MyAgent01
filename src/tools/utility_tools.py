@@ -13,7 +13,7 @@ def get_current_datetime() -> str:
 def evaluate_math(expression: str) -> str:
     """Safely evaluate a mathematical expression using simpleeval."""
     try:
-        from simpleeval import simple_eval, NumberTooHigh
+        from simpleeval import simple_eval
         result = simple_eval(expression.strip())
         return str(result)
     except Exception as e:

@@ -1,12 +1,9 @@
 """
 Memory Isolation Test - Verify concurrent sessions never leak memory into each other.
 """
-import pytest
 import asyncio
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from src.core.memory import ConversationMemory, MemoryEntry
-from src.core.engine import count_tokens
+from src.core.memory import ConversationMemory
 
 
 def test_memory_isolation():

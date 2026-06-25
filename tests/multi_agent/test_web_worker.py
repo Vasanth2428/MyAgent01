@@ -1,11 +1,8 @@
 # Tests for web worker.
-import pytest
-from unittest.mock import Mock
 
 
 def test_web_worker_routing():
     """Test web worker processes search correctly."""
-    from langchain_core.messages import AIMessage
     from src.agents.web_worker import web_worker_node
     
     state = {
