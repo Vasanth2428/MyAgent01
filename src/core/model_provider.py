@@ -181,6 +181,11 @@ def _create_base_model(
     if provider == "groq":
         from langchain_groq import ChatGroq
         api_key = _first_env((*api_key_envs, "GROQ_API_KEY", "AGENT_API_KEY"))
+        if hasattr(ChatGroq, "_mock_return_value") or hasattr(ChatGroq, "assert_called") or hasattr(ChatGroq, "return_value"):
+            return _wrap_model_message_cleaning(ChatGroq(api_key=api_key, **common), "groq")
+        if not api_key or "your_" in api_key or "mock" in api_key:
+            from src.core.llm import FakeChatGroq
+            return FakeChatGroq(**common)
         return _wrap_model_message_cleaning(ChatGroq(api_key=api_key, **common), "groq")
 
     elif provider == "google_genai":

@@ -389,61 +389,54 @@ class LLMService:
         return self.client
 
 
-# Monkeypatch ChatGroq if GROQ keys are missing or invalid
-import os
-groq_key = os.getenv("GROQ_API_KEY") or os.getenv("GROQ_CORE_KEY") or os.getenv("AGENT_API_KEY")
-if not groq_key or "your_" in groq_key or "mock" in groq_key:
-    try:
-        import langchain_groq
-        from langchain_core.messages import AIMessage
+# FakeChatGroq for offline agent/testing support
+from langchain_core.messages import AIMessage
+
+class FakeChatGroq:
+    def __init__(self, *args, **kwargs):
+        self.model = kwargs.get("model", "mock-model")
         
-        class FakeChatGroq:
-            def __init__(self, *args, **kwargs):
-                self.model = kwargs.get("model", "mock-model")
-                
-            def bind_tools(self, *args, **kwargs):
-                return self
-                
-            def with_fallbacks(self, *args, **kwargs):
-                return self
-                
-            def with_structured_output(self, schema, *args, **kwargs):
-                self.schema = schema
-                return self
-                
-            def invoke(self, messages, *args, **kwargs):
-                if hasattr(self, "schema"):
-                    schema_name = self.schema.__name__ if hasattr(self, "schema", "__name__") else str(self.schema)
-                    if "SupervisorDecision" in schema_name:
-                        from src.graph.supervisor import SupervisorDecision
-                        msg_str = "".join([str(m) for m in messages])
-                        if "rag_worker" in msg_str or "completed" in msg_str.lower():
-                            return SupervisorDecision(
-                                next_agent="FINISH",
-                                plan=["Retrieve context", "Generate response"],
-                                current_task="Finish synthesis",
-                                steps_remaining=0
-                            )
-                        else:
-                            return SupervisorDecision(
-                                next_agent="rag_worker",
-                                plan=["Query rag_worker for context", "Generate response"],
-                                current_task="Querying database",
-                                steps_remaining=5
-                            )
-                    elif "CriticReport" in schema_name:
-                        from src.agents.code_critic_worker import CriticReport
-                        return CriticReport(
-                            status="approved",
-                            feedback="Mock review: Code matches requirements.",
-                            security_score=10.0,
-                            vulnerabilities=[]
-                        )
-                
-                last_content = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
-                return AIMessage(content=f"[Local Mock Agent Mode] Executed successfully. Details: {last_content[:150]}")
-                
-        langchain_groq.ChatGroq = FakeChatGroq
-        logger.warning("langchain_groq.ChatGroq has been monkeypatched to FakeChatGroq for offline agent execution.")
-    except Exception as e:
-        logger.error(f"Failed to monkeypatch ChatGroq: {e}")
+    def bind_tools(self, *args, **kwargs):
+        return self
+        
+    def with_fallbacks(self, *args, **kwargs):
+        return self
+        
+    def with_structured_output(self, schema, *args, **kwargs):
+        self.schema = schema
+        return self
+        
+    def invoke(self, messages, *args, **kwargs):
+        if hasattr(self, "schema"):
+            schema_name = self.schema.__name__ if hasattr(self, "schema", "__name__") else str(self.schema)
+            if "SupervisorDecision" in schema_name:
+                from src.graph.supervisor import SupervisorDecision
+                msg_str = "".join([str(m) for m in messages])
+                if "rag_worker" in msg_str or "completed" in msg_str.lower():
+                    return SupervisorDecision(
+                        next_agent="FINISH",
+                        plan=["Retrieve context", "Generate response"],
+                        current_task="Finish synthesis",
+                        steps_remaining=0
+                    )
+                else:
+                    return SupervisorDecision(
+                        next_agent="rag_worker",
+                        plan=["Query rag_worker for context", "Generate response"],
+                        current_task="Querying database",
+                        steps_remaining=5
+                    )
+            elif "CriticReport" in schema_name:
+                from src.agents.code_critic_worker import CriticReport
+                return CriticReport(
+                    valid=True,
+                    findings=[],
+                    criticism_summary="Mock review: Code matches requirements."
+                )
+        
+        last_content = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
+        return AIMessage(content=f"[Local Mock Agent Mode] Executed successfully. Details: {last_content[:150]}")
+
+    async def ainvoke(self, messages, *args, **kwargs):
+        return self.invoke(messages, *args, **kwargs)
+

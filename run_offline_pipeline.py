@@ -424,32 +424,13 @@ def main():
     config = get_graph_config(f"offline_smarthome_{int(time.time())}")
     
     query = "Create a premium Smart Home Automation Dashboard inside `./workspace` named 'smart_home'"
-    initial_state = {
-        "messages": [HumanMessage(content=query)],
-        "next_agent": "supervisor",
+    from src.graph.state_2pipeline import create_initial_state
+    initial_state = create_initial_state([HumanMessage(content=query)], bypass_hitl=True)
+    initial_state.update({
         "steps_remaining": 20,
-        "plan": [],
-        "current_task": "",
-        "worker_complete": {},
-        "retry_counter": 0,
-        "critic_retry_count": 0,
-        "waiting_for_approval": False,
-        "approval_filepath": "",
-        "pending_file_approvals": {},
-        "patch_is_verified": False,
         "active_project": "smart_home",
-        "session_id": "offline_smarthome_session",
-        "active_document_ids": [],
-        "task_hashes": [],
-        "file_status_flags": {},
-        "worker_output_ids": {},
-        "worker_output_summaries": {},
-        "scratchpad_references": [],
-        "scratchpad": "",
-        "worker_outputs": {},
-        "final_answer": "",
-        "bypass_hitl": True # Bypass HITL for non-interactive runner
-    }
+        "session_id": "offline_smarthome_session"
+    })
     
     print("\nRunning Multi-Agent integration pipeline...")
     

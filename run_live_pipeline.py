@@ -23,32 +23,13 @@ def main():
     query = "Create a React frontend and Python FastAPI backend for a crypto portfolio website inside `./workspace/crypto_portfolio` (place frontend files under 'crypto_portfolio/frontend' and backend files under 'crypto_portfolio/backend')"
     config = get_graph_config(f"live_build_{int(time.time())}")
     
-    initial_state = {
-        "messages": [HumanMessage(content=query)],
-        "next_agent": "supervisor",
+    from src.graph.state_2pipeline import create_initial_state
+    initial_state = create_initial_state([HumanMessage(content=query)], bypass_hitl=True)
+    initial_state.update({
         "steps_remaining": 15,
-        "plan": [],
-        "current_task": "",
-        "worker_complete": {},
-        "retry_counter": 0,
-        "critic_retry_count": 0,
-        "waiting_for_approval": False,
-        "approval_filepath": "",
-        "pending_file_approvals": {},
-        "patch_is_verified": False,
         "active_project": "crypto_portfolio",
-        "session_id": f"live_build_{int(time.time())}",
-        "active_document_ids": [],
-        "task_hashes": [],
-        "file_status_flags": {},
-        "worker_output_ids": {},
-        "worker_output_summaries": {},
-        "scratchpad_references": [],
-        "scratchpad": "",
-        "worker_outputs": {},
-        "final_answer": "",
-        "bypass_hitl": True # Bypass HITL for non-interactive runner
-    }
+        "session_id": f"live_build_{int(time.time())}"
+    })
     
     print("\nRunning Live Multi-Agent pipeline (calling real LLMs)...")
     import traceback

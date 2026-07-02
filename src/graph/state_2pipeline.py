@@ -109,3 +109,42 @@ class AgentState(TypedDict):
     worker_outputs: Annotated[Dict[str, str], merge_dicts]  # Temporary full text outputs for worker nodes
     messages: Annotated[List[BaseMessage], add_messages]
     final_answer: str
+
+
+def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False) -> dict:
+    """Helper factory to construct the default AgentState dict consistently."""
+    return {
+        "messages": messages,
+        "next_agent": "supervisor",
+        "context_notes": [],
+        "steps_remaining": 10,
+        "final_answer": "",
+        "plan": [],
+        "scratchpad": "",
+        "current_task": "",
+        "worker_complete": {},
+        "worker_outputs": {},
+        "parallel_tasks": [],
+        "critic_retry_count": 0,
+        "waiting_for_approval": False,
+        "approval_filepath": "",
+        "approval_tool": "",
+        "pending_file_approvals": {},
+        "bypass_hitl": bypass_hitl,
+        "active_document_ids": [],
+        "task_hashes": [],
+        "file_status_flags": {},
+        "completed_tasks": [],
+        "worker_output_ids": {},
+        "worker_output_summaries": {},
+        "scratchpad_references": [],
+        "coding_worker_messages": [],
+        "coding_worker_step": 0,
+        "coding_worker_tool_calls_count": 0,
+        "coding_worker_resume_tool_result": None,
+        "coding_worker_resume_tool_call_id": None,
+        "patch_is_verified": False,
+        "active_project": "",
+        "retry_counter": 0
+    }
+

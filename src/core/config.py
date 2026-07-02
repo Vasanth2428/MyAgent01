@@ -18,11 +18,16 @@ import os
 # Self-healing env restoration from secure App Data backup
 def _restore_env_backup():
     import shutil
+    import logging as _logging
+
     env_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", ".env")
-    backup_dir = r"C:\Users\vasan\.gemini\antigravity-ide\brain\ea7b924b-38b2-45e6-a87a-3f1b5cd93c59\env_backup"
+
+    # Derive backup directory dynamically from platform-appropriate app data location
+    _app_data = os.getenv("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
+    backup_dir = os.path.join(_app_data, ".gemini", "antigravity-ide", "env_backup")
     backup_path = os.path.join(backup_dir, ".env")
-    
-    # If backup doesn't exist, create/sync it from config/.env
+
+    # If config/.env exists, keep backup in sync
     if os.path.exists(env_path):
         os.makedirs(backup_dir, exist_ok=True)
         try:
@@ -34,7 +39,9 @@ def _restore_env_backup():
         os.makedirs(os.path.dirname(env_path), exist_ok=True)
         try:
             shutil.copy2(backup_path, env_path)
-            print("Self-healing: Restored config/.env from secure App Data backup.", flush=True)
+            _logging.getLogger("RAG.Config").info(
+                "Self-healing: Restored config/.env from app data backup."
+            )
         except Exception:
             pass
 
