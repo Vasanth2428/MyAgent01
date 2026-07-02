@@ -4,12 +4,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import logging_setup to activate global safe print wrapper
 
-# Mock FlashrankRerank to make unit tests fast, deterministic and 100% offline
-class MockFlashrankRerank:
-    def __init__(self, model=None, top_n=None):
+# Mock flashrank.Ranker to make unit tests fast, deterministic and 100% offline
+class MockRanker:
+    def __init__(self, model_name=None, cache_dir=None):
         pass
 
-    def compress_documents(self, documents, query):
+    def rerank(self, request):
+        query = request.query
+        passages = request.passages
+        
         import re
         # Heuristic scoring to satisfy tests
         def heuristic_score(doc_text):
@@ -60,19 +63,18 @@ class MockFlashrankRerank:
             return score
 
         # Score and sort documents
-        scored_docs = []
-        for doc in documents:
-            score = heuristic_score(doc.page_content)
-            # Create a new document with updated metadata
-            from langchain_core.documents import Document
-            new_metadata = dict(doc.metadata)
-            new_metadata["relevance_score"] = score
-            scored_docs.append(Document(page_content=doc.page_content, metadata=new_metadata))
+        scored_passages = []
+        for p in passages:
+            score = heuristic_score(p["text"])
+            scored_passages.append({
+                "id": p.get("id"),
+                "text": p["text"],
+                "score": score
+            })
 
         # Sort by relevance score descending
-        return sorted(scored_docs, key=lambda d: d.metadata["relevance_score"], reverse=True)
+        return sorted(scored_passages, key=lambda x: x["score"], reverse=True)
 
 # Apply monkeypatching before tests run
-import sys
-import langchain_community.document_compressors
-langchain_community.document_compressors.FlashrankRerank = MockFlashrankRerank
+import flashrank
+flashrank.Ranker = MockRanker

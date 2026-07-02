@@ -18,12 +18,20 @@ Never invent information. Use only what you find in the document search results.
 
 def get_reasoning_model():
     """Get the configured LLM model for document reasoning."""
+    from src.core.model_provider import resolve_provider
+    provider = resolve_provider("rag_worker", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "rag_worker",
         RAG_WORKER_MODEL_PRIMARY,
         RAG_WORKER_MODEL_FALLBACK,
         temperature=0,
-        api_key_envs=("GROQ_CORE_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
     )
 
 

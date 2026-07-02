@@ -5,7 +5,7 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from src.core.config import REPORT_WORKER_MODEL_PRIMARY, REPORT_WORKER_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback, message_text
+from src.core.model_provider import build_model_with_fallback, resolve_provider
 
 logger = logging.getLogger("MultiAgent.ReportWorker")
 
@@ -40,12 +40,19 @@ def cleanup_old_reports(reports_dir: str, max_age_hours: int = 48):
 
 def get_report_model():
     """Get the LLM model for report generation."""
+    provider = resolve_provider("report_worker", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "report_worker",
         REPORT_WORKER_MODEL_PRIMARY,
         REPORT_WORKER_MODEL_FALLBACK,
         temperature=0.3,
-        api_key_envs=("GROQ_CORE_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
     )
 
 def report_worker_node(state: dict) -> dict:

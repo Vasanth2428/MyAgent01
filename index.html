@@ -41,6 +41,13 @@
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                     </svg>
                 </button>
+                <button type="button" class="activity-btn" data-panel="rag" title="RAG Knowledge Base">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22c5.523 0 10-2.239 10-5V5c0-2.761-4.477-5-10-5S2 2.239 2 5v12c0 2.761 4.477 5 10 5z"/>
+                        <path d="M2 11c0 2.761 4.477 5 10 5s10-2.239 10-5"/>
+                        <path d="M2 5c0 2.761 4.477 5 10 5s10-2.239 10-5"/>
+                    </svg>
+                </button>
                 <button type="button" class="activity-btn" data-panel="git" title="Source Control">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="6" y1="3" x2="6" y2="15"/>
@@ -103,6 +110,41 @@
                 </div>
                 <div class="conv-list" id="conv-list">
                     <div class="conv-list-empty" id="conv-list-empty">No conversations yet.</div>
+                </div>
+            </div>
+
+            <!-- RAG Context Engine QA Panel -->
+            <div class="ide-sidebar-panel" id="panel-rag">
+                <div class="panel-header">
+                    <span>RAG Context QA</span>
+                </div>
+                <div class="sidebar-scroll-content" style="padding: 12px; display: flex; flex-direction: column; gap: 12px; height: calc(100% - 40px); overflow-y: auto;">
+                    <form id="rag-sidebar-form" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
+                        <div style="position: relative;">
+                            <textarea id="rag-sidebar-input" class="chat-input" placeholder="Ask knowledge base..." style="width: 100%; height: 70px; padding: 8px; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-canvas); color: var(--text-primary); font-size: 0.75rem; resize: none; outline: none;" rows="2"></textarea>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <select id="rag-sidebar-pipeline" style="background: var(--bg-surface-hover); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 0.65rem; padding: 3px 6px; border-radius: 4px; outline: none; cursor: pointer;">
+                                <option value="context_engine">Advanced Pipeline</option>
+                                <option value="normal">Simple RAG</option>
+                            </select>
+                            <button type="submit" id="rag-sidebar-submit" class="preset-btn active" style="padding: 3px 12px; font-size: 0.68rem; height: 22px; font-weight: 600; cursor: pointer; border-radius: 4px; border: 1px solid var(--accent-cyan); background: rgba(34, 211, 238, 0.08); color: var(--accent-cyan);">Ask</button>
+                        </div>
+                    </form>
+                    
+                    <div id="rag-sidebar-results-container" style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
+                        <div id="rag-sidebar-status" style="font-size: 0.68rem; color: var(--text-muted); font-style: italic; text-align: center; display: none;"></div>
+                        <div id="rag-sidebar-answer-wrapper" style="display: none; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px; font-size: 0.75rem; line-height: 1.5; color: var(--text-primary); max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;">
+                        </div>
+                        <div id="rag-sidebar-sources-wrapper" style="display: none; display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 0.65rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Retrieved Sources:</span>
+                            <div id="rag-sidebar-sources-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                        </div>
+                        <div class="readout-empty" id="rag-sidebar-placeholder" style="text-align: center; color: var(--text-muted); font-style: italic; font-size: 0.7rem; margin-top: 2rem;">
+                            Awaiting your question...
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -453,27 +495,46 @@
             <div class="chat-input-wrapper">
                 <!-- Dropdown, HITL and Upload bar nested inside input area -->
                 <div class="chat-input-header">
-                    <div class="mode-dropdown-container">
-                        <button type="button" id="mode-dropdown-btn" class="mode-dropdown-btn" aria-haspopup="listbox" aria-expanded="false" style="padding: 0.35rem 0.65rem; font-size: 0.68rem; border-radius: 4px;">
-                            <svg class="model-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 11px; height: 11px;">
-                                <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-                                <polyline points="2 17 12 22 22 17"/>
-                                <polyline points="2 12 12 17 22 12"/>
+
+                    <div class="mode-dropdown-container" id="model-select-dropdown-container" style="margin-left: 8px;">
+                        <button type="button" id="model-dropdown-btn" class="mode-dropdown-btn" aria-haspopup="listbox" aria-expanded="false" style="padding: 0.35rem 0.65rem; font-size: 0.68rem; border-radius: 4px; display: flex; align-items: center; gap: 4px;">
+                            <svg class="model-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 11px; height: 11px; color: var(--accent-cyan);">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
                             </svg>
-                            <span id="active-mode-badge" class="model-name">ADVANCED PIPELINE</span>
+                            <span id="active-model-badge" class="model-name">CEREBRAS (GPT-OSS-120B)</span>
                         </button>
-                        <div class="mode-dropdown-menu" id="mode-dropdown-menu" role="listbox">
-                            <div class="mode-dropdown-item active" data-value="context_engine" role="option">
-                                <div class="mode-item-title">Advanced Pipeline</div>
-                                <div class="mode-item-desc">Hybrid search, re-ranking & recovery</div>
+                        <div class="mode-dropdown-menu" id="model-dropdown-menu" role="listbox" style="min-width: 260px; max-height: 400px; overflow-y: auto;">
+                            <div class="mode-dropdown-item active" data-provider="cerebras" data-model="gpt-oss-120b" role="option">
+                                <div class="mode-item-title">Cerebras GPT-OSS-120B</div>
+                                <div class="mode-item-desc">High parameter reasoning model (default)</div>
                             </div>
-                            <div class="mode-dropdown-item" data-value="normal" role="option">
-                                <div class="mode-item-title">Simple RAG</div>
-                                <div class="mode-item-desc">Standard retriever & prompt</div>
+                            <div class="mode-dropdown-item" data-provider="google_genai" data-model="gemini-2.5-flash" role="option">
+                                <div class="mode-item-title">Gemini 2.5 Flash</div>
+                                <div class="mode-item-desc">High speed, massive 1M token context</div>
                             </div>
-                            <div class="mode-dropdown-item" data-value="agentic" role="option">
-                                <div class="mode-item-title">Cooperative Multi-Agent</div>
-                                <div class="mode-item-desc">Supervisor-orchestrated workflows</div>
+                            <div class="mode-dropdown-item" data-provider="mistral" data-model="codestral-latest" role="option">
+                                <div class="mode-item-title">Mistral Codestral Latest</div>
+                                <div class="mode-item-desc">Best for coding + tool calling agents</div>
+                            </div>
+                            <div class="mode-dropdown-item" data-provider="mistral" data-model="mistral-small-2506" role="option">
+                                <div class="mode-item-title">Mistral Small 2506</div>
+                                <div class="mode-item-desc">2.25M TPM | 5.0 RPS | Lightweight & fast</div>
+                            </div>
+                            <div class="mode-dropdown-item" data-provider="mistral" data-model="mistral-large-latest" role="option">
+                                <div class="mode-item-title">Mistral Large Latest</div>
+                                <div class="mode-item-desc">High reasoning | Tool calling + structured output</div>
+                            </div>
+                            <div class="mode-dropdown-item" data-provider="mistral" data-model="open-mixtral-8x7b" role="option">
+                                <div class="mode-item-title">Mistral Mixtral 8x7B</div>
+                                <div class="mode-item-desc">Sparse mixture-of-experts | Balanced agentic tasks</div>
+                            </div>
+                            <div class="mode-dropdown-item" data-provider="mistral" data-model="ministral-8b-2512" role="option">
+                                <div class="mode-item-title">Ministral 8B 2512</div>
+                                <div class="mode-item-desc">625K TPM | 3.1 RPS | Balanced capability</div>
+                            </div>
+                            <div class="mode-dropdown-item" data-provider="openai" data-model="gpt-4o-mini" role="option">
+                                <div class="mode-item-title">OpenAI GPT-4o Mini</div>
+                                <div class="mode-item-desc">Cost-efficient general intelligence</div>
                             </div>
                         </div>
                     </div>
@@ -501,9 +562,9 @@
                     </div>
 
                     <div style="display: none;">
-                        <input type="radio" name="engine-mode" value="context_engine" id="mode-context_engine-radio" checked>
+                        <input type="radio" name="engine-mode" value="context_engine" id="mode-context_engine-radio">
                         <input type="radio" name="engine-mode" value="normal" id="mode-normal-radio">
-                        <input type="radio" name="engine-mode" value="agentic" id="mode-agentic-radio">
+                        <input type="radio" name="engine-mode" value="agentic" id="mode-agentic-radio" checked>
                     </div>
                 </div>
 

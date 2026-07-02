@@ -16,7 +16,6 @@ import re
 import logging
 import asyncio
 import aiohttp
-import requests
 from html.parser import HTMLParser
 from typing import Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor
@@ -25,6 +24,7 @@ import ipaddress
 logger = logging.getLogger("RAG.Scraper")
 
 _aiohttp_session: Optional[aiohttp.ClientSession] = None
+_aiohttp_session_loop: Optional[asyncio.AbstractEventLoop] = None
 _executor = ThreadPoolExecutor(max_workers=10)
 
 
@@ -78,16 +78,24 @@ def _validate_url_for_ssrf(url: str) -> Tuple[bool, str, Optional[str]]:
     return True, "", first_public_ip
 
 async def _get_aiohttp_session() -> aiohttp.ClientSession:
-    global _aiohttp_session
-    if _aiohttp_session is None or _aiohttp_session.closed:
+    global _aiohttp_session, _aiohttp_session_loop
+    current_loop = asyncio.get_running_loop()
+    if (
+        _aiohttp_session is None
+        or _aiohttp_session.closed
+        or _aiohttp_session_loop is not current_loop
+    ):
         timeout = aiohttp.ClientTimeout(total=10.0)
         _aiohttp_session = aiohttp.ClientSession(timeout=timeout)
+        _aiohttp_session_loop = current_loop
     return _aiohttp_session
 
 async def close_aiohttp_session():
-    global _aiohttp_session
+    global _aiohttp_session, _aiohttp_session_loop
     if _aiohttp_session and not _aiohttp_session.closed:
         await _aiohttp_session.close()
+    _aiohttp_session = None
+    _aiohttp_session_loop = None
 
 class HTMLTextExtractor(HTMLParser):
     """
@@ -129,67 +137,11 @@ class HTMLTextExtractor(HTMLParser):
 def scrape_web_page(url: str, max_chars: int = 6000) -> str:
     """
     Fetches the HTML content of the URL, extracts clean body text, and truncates appropriately.
-    Synchronous wrapper around async implementation using run_in_executor.
+    Synchronous wrapper around the aiohttp implementation. The network work runs
+    on a dedicated executor thread so callers do not execute blocking requests.
     """
-    url = url.strip()
-    if not url:
-        return "Error: Scrape request received an empty URL."
-
-    # SSRF protection (SEC-02: returns pinned IP to prevent DNS rebinding)
-    is_valid, error_msg, pinned_ip = _validate_url_for_ssrf(url)
-    if not is_valid:
-        logger.warning(f"SSRF blocked: {error_msg}")
-        return f"Error: {error_msg}"
-
-    if not url.startswith("http://") and not url.startswith("https://"):
-        url = "https://" + url
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    try:
-        logger.info(f"Crawling web page (sync): {url}")
-        from urllib.parse import urlparse, urlunparse
-        if pinned_ip:
-            parsed_url = urlparse(url)
-            pinned_url = urlunparse(parsed_url._replace(netloc=f"{pinned_ip}:{parsed_url.port or (443 if parsed_url.scheme == 'https' else 80)}"))
-            headers["Host"] = parsed_url.hostname
-            response = requests.get(pinned_url, headers=headers, timeout=10.0, verify=parsed_url.scheme == 'https')
-        else:
-            response = requests.get(url, headers=headers, timeout=10.0)
-        response.raise_for_status()
-
-        content_type = response.headers.get("Content-Type", "").lower()
-        if "text/html" not in content_type:
-            if "text/plain" in content_type:
-                return response.text[:max_chars]
-            return f"Error: Unsupported content-type '{content_type}'. Only HTML pages can be scraped."
-
-        parser = HTMLTextExtractor()
-        parser.feed(response.text)
-        text = parser.get_text()
-
-        if not text:
-            return "Warning: Page fetched successfully but no text content was found in the body."
-
-        if len(text) > max_chars:
-            return text[:max_chars] + f"\n\n... [Truncated. Total length: {len(text)} characters] ..."
-
-        return text
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout scraping URL: {url}")
-        return f"Error: The request to fetch '{url}' timed out."
-    except requests.exceptions.HTTPError as http_err:
-        logger.error(f"HTTP error scraping URL: {url} - {http_err}")
-        try:
-            status = response.status_code
-        except Exception:
-            status = "unknown"
-        return f"Error: HTTP request failed with status: {status}."
-    except Exception as e:
-        logger.error(f"Unexpected error scraping URL: {url} - {e}")
-        return f"Error: Failed to fetch or parse page: {type(e).__name__}: {e}"
+    future = _executor.submit(lambda: asyncio.run(scrape_web_page_async(url, max_chars)))
+    return future.result()
 
 
 async def scrape_multiple_pages_async(urls: List[str], max_chars: int = 6000, max_concurrent: int = 5) -> List[str]:

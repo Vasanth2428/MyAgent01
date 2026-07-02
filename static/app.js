@@ -24,6 +24,11 @@ const hitlBypassToggle      = document.getElementById('hitl-bypass-toggle');
 const hitlLabel             = document.getElementById('hitl-label');
 const autonomyLabel         = document.getElementById('autonomy-label');
 
+const activeModelBadge       = document.getElementById('active-model-badge');
+const modelDropdownContainer = document.getElementById('model-select-dropdown-container');
+const modelDropdownBtn       = modelDropdownContainer ? modelDropdownContainer.querySelector('.mode-dropdown-btn') : null;
+const modelDropdownItems     = modelDropdownContainer ? modelDropdownContainer.querySelectorAll('.mode-dropdown-item') : [];
+
 // Stats Panel
 const statQ         = document.getElementById('stat-q');
 const statC         = document.getElementById('stat-c');
@@ -61,6 +66,8 @@ localStorage.setItem('station_sid', sid);
 if (sessionTag) sessionTag.textContent = `SID: ${sid}`;
 
 let contextLimit = parseInt(contextLimitSlider.value);
+let activeProvider = localStorage.getItem('active_provider') || 'cerebras';
+let activeModel = localStorage.getItem('active_model') || 'gpt-oss-120b';
 let abortController = null;
 let isInParallelMode = false;
 let sessionOverflows = 0;
@@ -192,6 +199,53 @@ if (modeDropdownBtn && modeDropdownContainer) {
         });
     });
 }
+
+function syncModelDropdown() {
+    if (!modelDropdownItems.length || !activeModelBadge) return;
+    modelDropdownItems.forEach(item => {
+        const prov = item.dataset.provider;
+        const mod = item.dataset.model;
+        if (prov === activeProvider && mod === activeModel) {
+            item.classList.add('active');
+            const titleEl = item.querySelector('.mode-item-title');
+            if (titleEl) {
+                activeModelBadge.textContent = titleEl.textContent.toUpperCase();
+            }
+        } else {
+            item.classList.remove('active');
+        }
+    });
+}
+
+if (modelDropdownBtn && modelDropdownContainer) {
+    modelDropdownBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        modelDropdownContainer.classList.toggle('open');
+        const isOpen = modelDropdownContainer.classList.contains('open');
+        modelDropdownBtn.setAttribute('aria-expanded', isOpen);
+    });
+
+    document.addEventListener('click', (e) => {
+        if (modelDropdownContainer && !modelDropdownContainer.contains(e.target)) {
+            modelDropdownContainer.classList.remove('open');
+            modelDropdownBtn.setAttribute('aria-expanded', 'false');
+        }
+    });
+
+    modelDropdownItems.forEach(item => {
+        item.addEventListener('click', () => {
+            activeProvider = item.dataset.provider;
+            activeModel = item.dataset.model;
+            localStorage.setItem('active_provider', activeProvider);
+            localStorage.setItem('active_model', activeModel);
+            addLog(`Active LLM switched to ${activeProvider.toUpperCase()} (${activeModel})`, "SYSTEM");
+            syncModelDropdown();
+            modelDropdownContainer.classList.remove('open');
+            modelDropdownBtn.setAttribute('aria-expanded', 'false');
+        });
+    });
+}
+syncModelDropdown();
 
 // ---- Slider & Preset Listeners ----
 contextLimitSlider.addEventListener('input', (() => {
@@ -680,7 +734,9 @@ form.addEventListener('submit', async (e) => {
     }, 600);
     
     const mode = document.querySelector('input[name="engine-mode"]:checked').value;
-    activeModeBadge.textContent = mode === 'agentic' ? 'COOPERATIVE MULTI-AGENT' : mode.replace('_', ' ').toUpperCase();
+    if (activeModeBadge) {
+        activeModeBadge.textContent = mode === 'agentic' ? 'COOPERATIVE MULTI-AGENT' : mode.replace('_', ' ').toUpperCase();
+    }
     isInParallelMode = false; // Reset parallel tracking state
     
     addLog(`Initiating streaming request (Mode: ${mode} | Limit: ${contextLimit} TKN)`, 'REQUEST');
@@ -803,7 +859,9 @@ form.addEventListener('submit', async (e) => {
                 session_id: AppState.sid, 
                 mode: mode,
                 context_limit: AppState.contextLimit,
-                bypass_hitl: bypassHitl
+                bypass_hitl: bypassHitl,
+                model_provider: activeProvider,
+                model_name: activeModel
             }),
             signal: AppState.abortController.signal
         });
@@ -922,26 +980,6 @@ form.addEventListener('submit', async (e) => {
                     addLog("File operation blocked pending approval: " + data.filepath, "WARNING");
                     ensureAccordion();
                     
-                    const approvalDiv = document.createElement("div");
-                    approvalDiv.id = "approval-panel-" + Date.now();
-                    approvalDiv.className = "step-approval-log";
-                    approvalDiv.style.cssText = "margin-top: 10px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid orange; border-radius: 6px;";
-                    
-                    const approvalMsg = document.createElement("div");
-                    approvalMsg.innerHTML = "<span style=\"color: orange; font-weight: bold;\">⚠️ " + data.tool + " on '" + data.filepath + "'</span>";
-                    approvalDiv.appendChild(approvalMsg);
-                    
-                    const btnContainer = document.createElement("div");
-                    btnContainer.style.cssText = "display: flex; gap: 8px; margin-top: 8px;";
-                    
-                    const approveBtn = document.createElement("button");
-                    approveBtn.textContent = "✔ Approve";
-                    approveBtn.style.cssText = "padding: 6px 14px; background: #16a34a; border: none; border-radius: 4px; color: #fff; font-weight: bold; cursor: pointer; pointer-events: auto; z-index: 100;";
-                    
-                    const rejectBtn = document.createElement("button");
-                    rejectBtn.textContent = "✖ Reject";
-                    rejectBtn.style.cssText = "padding: 6px 14px; background: #dc2626; border: none; border-radius: 4px; color: #fff; font-weight: bold; cursor: pointer; pointer-events: auto; z-index: 100;";
-
                     // Capture current accordion refs before the async resume stream replaces them
                     const capturedAccordion = inlineThinkingAccordion;
                     const capturedDetails = inlineThinkingDetails;
@@ -949,25 +987,17 @@ form.addEventListener('submit', async (e) => {
                     const capturedAiBubble = aiBubble;
                     const capturedMode = mode;
 
-                    const disableBtns = () => {
-                        approveBtn.disabled = true;
-                        rejectBtn.disabled = true;
-                        approveBtn.style.opacity = '0.5';
-                        rejectBtn.style.opacity = '0.5';
-                    };
-
-                    approveBtn.onclick = function() {
-                        disableBtns();
-                        sendApproval(true, data.filepath, data.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
-                    };
-                    rejectBtn.onclick = function() {
-                        disableBtns();
-                        sendApproval(false, data.filepath, data.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
-                    };
-                    
-                    btnContainer.appendChild(approveBtn);
-                    btnContainer.appendChild(rejectBtn);
-                    approvalDiv.appendChild(btnContainer);
+                    const approvalDiv = createApprovalPanel(
+                        data.filepath,
+                        data.tool,
+                        data.diff || "",
+                        () => {
+                            sendApproval(true, data.filepath, data.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
+                        },
+                        () => {
+                            sendApproval(false, data.filepath, data.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
+                        }
+                    );
                     inlineThinkingDetails.appendChild(approvalDiv);
                     inlineThinkingDetails.scrollTop = inlineThinkingDetails.scrollHeight;
                 }
@@ -1296,6 +1326,54 @@ window.closeTelemetryModal = function() {
     telemetryModal.classList.remove('open');
 };
 
+// ---- HTML Diff Approval Card Generator ----
+function createApprovalPanel(filepath, tool, diffText, onApprove, onReject) {
+    const aDiv = document.createElement("div");
+    aDiv.id = "approval-panel-" + Date.now();
+    aDiv.className = "step-approval-log";
+    aDiv.style.cssText = "margin-top: 10px; padding: 12px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 6px;";
+    
+    const approvalMsg = document.createElement("div");
+    approvalMsg.innerHTML = `<span style="color: orange; font-weight: bold; font-size: 0.8rem; display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ${escapeHtml(tool)} on '${escapeHtml(filepath)}'</span>`;
+    aDiv.appendChild(approvalMsg);
+    
+    if (diffText) {
+        const diffDiv = document.createElement("div");
+        diffDiv.className = "approval-diff-preview";
+        diffDiv.style.cssText = "margin-top: 8px; max-height: 250px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.7rem; background: #0c0f17; border: 1px solid rgba(255,255,255,0.08); padding: 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; line-height: 1.5; color: #e2e8f0;";
+        
+        const lines = diffText.split("\n");
+        const styledLines = lines.map(line => {
+            if (line.startsWith("+")) {
+                return `<div style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 1px 4px; border-radius: 2px;">${escapeHtml(line)}</div>`;
+            } else if (line.startsWith("-")) {
+                return `<div style="background: rgba(239, 68, 68, 0.15); color: #f87171; padding: 1px 4px; border-radius: 2px;">${escapeHtml(line)}</div>`;
+            } else if (line.startsWith("@@")) {
+                return `<div style="color: #60a5fa; font-weight: 500; padding: 1px 4px;">${escapeHtml(line)}</div>`;
+            }
+            return `<div style="padding: 1px 4px; opacity: 0.85;">${escapeHtml(line)}</div>`;
+        });
+        diffDiv.innerHTML = styledLines.join("");
+        aDiv.appendChild(diffDiv);
+    }
+    
+    const bc = document.createElement('div');
+    bc.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+    const ab = document.createElement('button');
+    ab.textContent = '✔ Approve';
+    ab.style.cssText = 'padding: 6px 14px; background: #16a34a; border: none; border-radius: 4px; color: #fff; font-weight: bold; cursor: pointer; pointer-events: auto; z-index: 100; font-size: 0.75rem;';
+    const rb = document.createElement('button');
+    rb.textContent = '✖ Reject';
+    rb.style.cssText = 'padding: 6px 14px; background: #dc2626; border: none; border-radius: 4px; color: #fff; font-weight: bold; cursor: pointer; pointer-events: auto; z-index: 100; font-size: 0.75rem;';
+    
+    const dis = () => { ab.disabled = true; rb.disabled = true; ab.style.opacity='0.5'; rb.style.opacity='0.5'; };
+    ab.onclick = () => { dis(); onApprove(); };
+    rb.onclick = () => { dis(); onReject(); };
+    
+    bc.appendChild(ab); bc.appendChild(rb); aDiv.appendChild(bc);
+    return aDiv;
+}
+
 // ---- Send Approval Function ----
 // Accepts captured UI refs so it can inject resumed-workflow SSE events
 // directly into the existing AI bubble / accordion without spawning a new message.
@@ -1410,21 +1488,17 @@ async function sendApproval(approved, filepath, tool,
                         
                         if (capturedDetails) {
                             addLog('Another file operation needs approval: ' + filepath, 'WARNING');
-                            const aDiv = document.createElement('div');
-                            aDiv.style.cssText = 'margin-top:10px;padding:12px;background:rgba(251,191,36,0.1);border:1px solid orange;border-radius:6px;';
-                            aDiv.innerHTML = `<span style="color:orange;font-weight:bold;">⚠️ ${escapeHtml(tool)} on '${escapeHtml(filepath)}'</span>`;
-                            const bc = document.createElement('div');
-                            bc.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
-                            const ab = document.createElement('button');
-                            ab.textContent = '✔ Approve';
-                            ab.style.cssText = 'padding:6px 14px;background:#16a34a;border:none;border-radius:4px;color:#fff;font-weight:bold;cursor:pointer;';
-                            const rb = document.createElement('button');
-                            rb.textContent = '✖ Reject';
-                            rb.style.cssText = 'padding:6px 14px;background:#dc2626;border:none;border-radius:4px;color:#fff;font-weight:bold;cursor:pointer;';
-                            const dis = () => { ab.disabled = true; rb.disabled = true; ab.style.opacity='0.5'; rb.style.opacity='0.5'; };
-                            ab.onclick = () => { dis(); sendApproval(true, filepath, tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode); };
-                            rb.onclick = () => { dis(); sendApproval(false, filepath, tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode); };
-                            bc.appendChild(ab); bc.appendChild(rb); aDiv.appendChild(bc);
+                            const aDiv = createApprovalPanel(
+                                filepath,
+                                tool,
+                                evt.diff || "",
+                                () => {
+                                    sendApproval(true, filepath, tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
+                                },
+                                () => {
+                                    sendApproval(false, filepath, tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
+                                }
+                            );
                             capturedDetails.appendChild(aDiv);
                             capturedDetails.scrollTop = capturedDetails.scrollHeight;
                         }
@@ -1442,21 +1516,17 @@ async function sendApproval(approved, filepath, tool,
                         // Another approval needed — show buttons again inside captured details
                         if (capturedDetails) {
                             addLog('Another file operation needs approval: ' + evt.filepath, 'WARNING');
-                            const aDiv = document.createElement('div');
-                            aDiv.style.cssText = 'margin-top:10px;padding:12px;background:rgba(251,191,36,0.1);border:1px solid orange;border-radius:6px;';
-                            aDiv.innerHTML = `<span style="color:orange;font-weight:bold;">⚠️ ${escapeHtml(evt.tool)} on '${escapeHtml(evt.filepath)}'</span>`;
-                            const bc = document.createElement('div');
-                            bc.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
-                            const ab = document.createElement('button');
-                            ab.textContent = '✔ Approve';
-                            ab.style.cssText = 'padding:6px 14px;background:#16a34a;border:none;border-radius:4px;color:#fff;font-weight:bold;cursor:pointer;';
-                            const rb = document.createElement('button');
-                            rb.textContent = '✖ Reject';
-                            rb.style.cssText = 'padding:6px 14px;background:#dc2626;border:none;border-radius:4px;color:#fff;font-weight:bold;cursor:pointer;';
-                            const dis = () => { ab.disabled = true; rb.disabled = true; ab.style.opacity='0.5'; rb.style.opacity='0.5'; };
-                            ab.onclick = () => { dis(); sendApproval(true, evt.filepath, evt.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode); };
-                            rb.onclick = () => { dis(); sendApproval(false, evt.filepath, evt.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode); };
-                            bc.appendChild(ab); bc.appendChild(rb); aDiv.appendChild(bc);
+                            const aDiv = createApprovalPanel(
+                                evt.filepath,
+                                evt.tool,
+                                evt.diff || "",
+                                () => {
+                                    sendApproval(true, evt.filepath, evt.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
+                                },
+                                () => {
+                                    sendApproval(false, evt.filepath, evt.tool, capturedAccordion, capturedDetails, capturedBodyContainer, capturedAiBubble, capturedMode);
+                                }
+                            );
                             capturedDetails.appendChild(aDiv);
                             capturedDetails.scrollTop = capturedDetails.scrollHeight;
                         }
@@ -3117,5 +3187,134 @@ AppState.updateContextLimit(parseInt(contextLimitSlider.value));
 
     refreshExplorer();
     updateGitStatus();
+})();
+
+
+// ================================================================
+// RAG SIDEBAR QA HANDLER
+// ================================================================
+(function() {
+    const ragForm = document.getElementById('rag-sidebar-form');
+    const ragInput = document.getElementById('rag-sidebar-input');
+    const ragPipeline = document.getElementById('rag-sidebar-pipeline');
+    const ragSubmit = document.getElementById('rag-sidebar-submit');
+    const ragPlaceholder = document.getElementById('rag-sidebar-placeholder');
+    const ragStatus = document.getElementById('rag-sidebar-status');
+    const ragAnswerWrapper = document.getElementById('rag-sidebar-answer-wrapper');
+    const ragSourcesWrapper = document.getElementById('rag-sidebar-sources-wrapper');
+    const ragSourcesList = document.getElementById('rag-sidebar-sources-list');
+
+    if (ragForm && ragInput && ragSubmit) {
+        ragForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = ragInput.value.trim();
+            if (!query) return;
+
+            // Reset UI state
+            if (ragPlaceholder) ragPlaceholder.style.display = 'none';
+            if (ragStatus) {
+                ragStatus.style.display = 'block';
+                ragStatus.textContent = 'Contacting knowledge base...';
+            }
+            if (ragAnswerWrapper) {
+                ragAnswerWrapper.style.display = 'block';
+                ragAnswerWrapper.innerHTML = `<span style="color: var(--text-muted);">Retrieving answer...</span>`;
+            }
+            if (ragSourcesWrapper) ragSourcesWrapper.style.display = 'none';
+            if (ragSourcesList) ragSourcesList.innerHTML = '';
+
+            // Disable input & submit
+            ragInput.disabled = true;
+            ragSubmit.disabled = true;
+            ragSubmit.style.opacity = '0.5';
+
+            let accumulatedAnswer = '';
+
+            try {
+                const bypassHitl = typeof hitlBypassToggle !== 'undefined' ? hitlBypassToggle.checked : false;
+                const res = await fetch(`/query_stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: query,
+                        session_id: typeof sid !== 'undefined' ? sid : 'rag-sidebar-session',
+                        mode: ragPipeline ? ragPipeline.value : 'context_engine',
+                        context_limit: typeof AppState !== 'undefined' ? AppState.contextLimit : 15000,
+                        bypass_hitl: bypassHitl,
+                        model_provider: typeof activeProvider !== 'undefined' ? activeProvider : 'cerebras',
+                        model_name: typeof activeModel !== 'undefined' ? activeModel : 'gpt-oss-120b'
+                    })
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Server Error');
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+
+                if (ragStatus) ragStatus.textContent = 'Generating response...';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        const cleanLine = line.trim();
+                        if (!cleanLine.startsWith('data:')) continue;
+
+                        const jsonStr = cleanLine.substring(5).trim();
+                        if (!jsonStr) continue;
+
+                        let data;
+                        try { data = JSON.parse(jsonStr); } catch { continue; }
+
+                        if (data.event === 'answer_chunk') {
+                            accumulatedAnswer += data.text;
+                            if (ragAnswerWrapper) {
+                                ragAnswerWrapper.innerHTML = typeof marked !== 'undefined' ? marked.parse(accumulatedAnswer) : accumulatedAnswer;
+                            }
+                        } else if (data.event === 'error') {
+                            throw new Error(data.message);
+                        } else if (data.event === 'done') {
+                            const stats = data.stats || {};
+                            if (stats.retrieved_context && stats.retrieved_context.length > 0 && ragSourcesWrapper && ragSourcesList) {
+                                ragSourcesWrapper.style.display = 'flex';
+                                stats.retrieved_context.forEach(hit => {
+                                    const card = document.createElement('div');
+                                    card.className = 'readout-item';
+                                    card.style.cssText = 'padding: 6px; font-size: 0.68rem; line-height: 1.4; border-radius: 4px; margin-bottom: 4px;';
+                                    card.innerHTML = `
+                                        <div style="font-weight: 500; color: #fff;">Source: ${escapeHtml(hit.source)}</div>
+                                        <div style="color: var(--text-secondary); margin-top: 2px;">${escapeHtml(hit.text.substring(0, 140))}...</div>
+                                        <div style="font-size: 0.6rem; color: var(--accent-cyan); margin-top: 2px; font-family: var(--font-mono);">SCORE: ${hit.score.toFixed(4)}</div>
+                                    `;
+                                    ragSourcesList.appendChild(card);
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (ragStatus) ragStatus.style.display = 'none';
+            } catch (err) {
+                if (ragStatus) ragStatus.style.display = 'none';
+                if (ragAnswerWrapper) {
+                    ragAnswerWrapper.innerHTML = `<span style="color: var(--accent-rose); font-weight: bold;">Error:</span> ${escapeHtml(err.message)}`;
+                }
+            } finally {
+                ragInput.disabled = false;
+                ragInput.value = ''; // Clear input on success/completion
+                ragSubmit.disabled = false;
+                ragSubmit.style.opacity = '1';
+            }
+        });
+    }
 })();
 

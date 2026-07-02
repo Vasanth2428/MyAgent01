@@ -84,7 +84,7 @@ class TestHardenedWorkers(unittest.TestCase):
     
         res = critic_worker_node(state)
         # It should strip RETRY_REQUIRED and not append error task, but should suggest an alternative approach
-        self.assertEqual(res["critic_retry_count"], 2)
+        self.assertEqual(res["critic_retry_count"], 0)
         self.assertIn("plan", res)
         self.assertTrue(any("ALTERNATIVE APPROACH" in p for p in res["plan"]))
         self.assertNotIn("RETRY_REQUIRED", res["messages"][0].content)
@@ -113,8 +113,9 @@ class TestHardenedWorkers(unittest.TestCase):
         self.assertNotIn("please provide the text you'd like me to summarize", res["messages"][0].content.lower())
         self.assertIn("findings", res["messages"][0].content)
 
+    @patch("src.agents.coding_worker.is_task_compatible", return_value=(True, ""))
     @patch("src.agents.coding_worker.get_coding_model")
-    def test_coding_worker_interrupted_timeout(self, mock_get_model):
+    def test_coding_worker_interrupted_timeout(self, mock_get_model, mock_is_compatible):
         """Coding worker should return completed=False and report interruption on loop timeout."""
         mock_tool_call = {
             "name": "list_files",

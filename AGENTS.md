@@ -25,3 +25,5 @@ QA specialist for comprehensive tests and improved code coverage.
 - Async-first design with proper error handling and retry logic
 - Weaviate integration with embedded vectors for server-side permission issues
 - Thread-safe model initialization with locks for concurrent access
+- Take charge of creating and using the terminal directly using tools when required, without instructing the user to run those commands.
+- If user permission is needed, only ask for permission directly without providing details or step-by-step instructions on how the user can execute it manually unless explicitly asked.

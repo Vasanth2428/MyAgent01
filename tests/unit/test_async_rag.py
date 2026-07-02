@@ -134,6 +134,21 @@ class TestAsyncRAG(unittest.IsolatedAsyncioTestCase):
             results = await scrape_multiple_pages_async(["url1", "url2", "url3"])
             self.assertEqual(results, ["result 1", "result 2", "result 3"])
 
+    def test_sync_scraper_delegates_to_async_scraper(self):
+        from src.core.scraper import scrape_web_page
+
+        calls = []
+
+        async def fake_scrape(url, max_chars=6000):
+            calls.append((url, max_chars))
+            return "async result"
+
+        with patch('src.core.scraper.scrape_web_page_async', new=fake_scrape):
+            result = scrape_web_page("https://example.com", max_chars=123)
+
+        self.assertEqual(result, "async result")
+        self.assertEqual(calls, [("https://example.com", 123)])
+
     async def test_async_reranker(self):
         mock_encoder = MagicMock()
         mock_encoder.predict.return_value = [0.8, 0.5, 0.3]

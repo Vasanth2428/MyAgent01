@@ -11,16 +11,23 @@ Structure responses with headers, bullet points, and clear formatting.
 
 
 from src.core.config import WEB_WORKER_MODEL_PRIMARY, WEB_WORKER_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback, message_text
+from src.core.model_provider import build_model_with_fallback, message_text, resolve_provider
 
 def get_reasoning_model():
     """Get the configured LLM model for web reasoning."""
+    provider = resolve_provider("web_worker", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "web_worker",
         WEB_WORKER_MODEL_PRIMARY,
         WEB_WORKER_MODEL_FALLBACK,
         temperature=0,
-        api_key_envs=("AGENT_API_KEY",),
+        api_key_envs=keys,
     )
 
 

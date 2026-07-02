@@ -6,7 +6,7 @@ import time
 import psutil
 import re
 import tempfile
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger("MultiAgent.CodingTools")
 
@@ -472,6 +472,11 @@ def _is_safe_command(cmd_args: List[str]) -> bool:
     if not cmd_args:
         return False
         
+    # Block shell command injection metacharacters in any argument
+    for arg in cmd_args:
+        if any(c in arg for c in [";", "&", "|", "$", "`"]):
+            return False
+            
     executable = cmd_args[0]
     
     if executable not in ["python", "pytest", "npm", "git"]:
@@ -490,24 +495,84 @@ def _is_safe_command(cmd_args: List[str]) -> bool:
                 elif len(cmd_args) == 4:
                     return cmd_args[3].isdigit()
                 return False
+            elif module == "pip":
+                if len(cmd_args) >= 5 and cmd_args[3] == "install":
+                    import re
+                    pip_flags = {"--upgrade", "--force-reinstall", "--no-cache-dir", "--user"}
+                    filtered_pip_args = []
+                    for arg in cmd_args[4:]:
+                        if arg not in pip_flags:
+                            filtered_pip_args.append(arg)
+                            
+                    if not filtered_pip_args:
+                        return False
+                        
+                    # python -m pip install -r requirements.txt
+                    if filtered_pip_args[0] == "-r" and len(filtered_pip_args) == 2:
+                        req_path = filtered_pip_args[1]
+                        return "requirements.txt" in req_path and ".." not in req_path
+                        
+                    for pkg in filtered_pip_args:
+                        if not re.match(r"^[a-zA-Z0-9\-@_/<>=!.^]+$", pkg):
+                            return False
+                    return True
+        # Allow running scripts directly in the workspace
+        if len(cmd_args) == 2:
+            return _is_safe_path(cmd_args[1])
         return False
         
     if executable == "pytest":
-        allowed_pytest_args = {
-            "tests/unit/test_coding_tools.py",
-            "tests/unit/test_coding_worker.py",
-            "tests/unit/test_workflow.py",
-            "-v", "-s", "-q", "--version", "--tb=short", "--tb=line"
-        }
         for arg in cmd_args[1:]:
-            if arg not in allowed_pytest_args:
-                if arg.startswith("tests/unit/test_") and arg.endswith(".py"):
-                    continue
-                return False
+            if arg.startswith("-"):
+                if arg not in {"-v", "-s", "-q", "--version", "--tb=short", "--tb=line"}:
+                    return False
+            else:
+                if not _is_safe_path(arg):
+                    return False
         return True
         
     if executable == "npm":
-        if len(cmd_args) == 3 and cmd_args[1] == "run" and cmd_args[2] in ["lint", "test", "build"]:
+        # Handle --prefix <path> in arguments
+        cleaned_npm_args = []
+        prefix_dir = None
+        i = 1
+        while i < len(cmd_args):
+            if cmd_args[i] == "--prefix":
+                if i + 1 < len(cmd_args):
+                    prefix_dir = cmd_args[i+1]
+                    i += 2
+                    continue
+                else:
+                    return False
+            cleaned_npm_args.append(cmd_args[i])
+            i += 1
+            
+        if prefix_dir is not None:
+            if not _is_safe_path(prefix_dir):
+                return False
+                
+        # Filter out flags like -D, --save-dev, --save, --no-save, --legacy-peer-deps, --force
+        npm_flags = {"-D", "--save-dev", "--save", "--no-save", "--legacy-peer-deps", "--force"}
+        filtered_npm_args = []
+        for arg in cleaned_npm_args:
+            if arg not in npm_flags:
+                filtered_npm_args.append(arg)
+                
+        if not filtered_npm_args:
+            return False
+            
+        # Allow npm run lint/test/build
+        if len(filtered_npm_args) == 2 and filtered_npm_args[0] == "run" and filtered_npm_args[1] in ["lint", "test", "build"]:
+            return True
+        # Allow npm install / npm ci
+        if len(filtered_npm_args) == 1 and filtered_npm_args[0] in ["install", "ci"]:
+            return True
+        # Allow npm install <packages>
+        if len(filtered_npm_args) >= 2 and filtered_npm_args[0] == "install":
+            import re
+            for pkg in filtered_npm_args[1:]:
+                if not re.match(r"^[a-zA-Z0-9\-@_/^.]+$", pkg):
+                    return False
             return True
         return False
         
@@ -517,6 +582,28 @@ def _is_safe_command(cmd_args: List[str]) -> bool:
         return False
         
     return False
+
+
+def _prepare_command_execution(cmd_args: List[str]) -> Tuple[List[str], str]:
+    """Return subprocess args and cwd after applying safe workspace-scoped command options."""
+    exec_args = list(cmd_args)
+    cwd = WORKSPACE_ROOT
+
+    if exec_args and exec_args[0] == "npm":
+        i = 1
+        while i < len(exec_args):
+            if exec_args[i] == "--prefix":
+                if i + 1 >= len(exec_args):
+                    break
+                prefix_dir = exec_args[i + 1]
+                if not _is_safe_path(prefix_dir):
+                    break
+                cwd = _get_absolute_path(prefix_dir)
+                del exec_args[i:i + 2]
+                break
+            i += 1
+
+    return exec_args, cwd
 
 
 def _parse_command_errors(stdout: str, stderr: str) -> str:
@@ -582,7 +669,12 @@ def _parse_command_errors(stdout: str, stderr: str) -> str:
 
 
 def execute_command(command: str) -> str:
-    """Execute a command in the `./workspace` folder securely."""
+    """Execute a command in the `./workspace` folder securely and return a JSON response.
+    The JSON contains keys: status (ok/error), message, data (stdout, stderr, returncode).
+    """
+    import json
+    def _format_response(status: str, message: str, data: dict = None) -> str:
+        return json.dumps({"status": status, "message": message, "data": data})
     cmd_clean = command.strip()
     if not cmd_clean:
         return "Error: Empty command provided."
@@ -597,16 +689,17 @@ def execute_command(command: str) -> str:
         
     if not _is_safe_command(cmd_args):
         return f"Error: Command '{command}' blocked by safety policy. Command is not in allowlist."
-        
-    print(f"\n[SECURE RUN] Executing command: {cmd_args} in '{WORKSPACE_ROOT}'")
+
+    exec_args, exec_cwd = _prepare_command_execution(cmd_args)
+    print(f"\n[SECURE RUN] Executing command: {exec_args} in '{exec_cwd}'")
     
     try:
         with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stdout_file, \
              tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr_file:
               
             proc = subprocess.Popen(
-                cmd_args,
-                cwd=WORKSPACE_ROOT,
+                exec_args,
+                cwd=exec_cwd,
                 stdout=stdout_file,
                 stderr=stderr_file,
                 text=True
@@ -704,15 +797,25 @@ def execute_command(command: str) -> str:
             if proc.returncode != 0:
                 parsed_errors = _parse_command_errors(stdout_data, stderr_data)
                 
-            return "\n".join(output) + status + parsed_errors
+            response_data = {
+                "stdout": stdout_data,
+                "stderr": stderr_data,
+                "returncode": proc.returncode,
+                "cwd": exec_cwd,
+                "parsed_errors": parsed_errors.strip()
+            }
+            return _format_response("ok" if proc.returncode == 0 else "error", "Command execution completed.", response_data)
             
     except Exception as e:
-        return f"Error executing command: {e}"
+        return _format_response("error", f"Error executing command: {e}")
 
 
 def run_safe_commands(command: str) -> str:
-    """Execute a shell command in the `./workspace` folder."""
+    """Execute a shell command in the `./workspace` folder using the secure executor.
+    Returns the same JSON structure as :func:`execute_command`.
+    """
     return execute_command(command)
+
 
 
 def update_vite_config_root(project_name: str) -> None:

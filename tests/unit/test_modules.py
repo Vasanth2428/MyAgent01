@@ -164,20 +164,21 @@ class TestCompressorSegmentation(unittest.TestCase):
 
 
 class TestRerankerNormalization(unittest.TestCase):
-    """Tests that the reranker outputs sigmoid-normalized scores in [0, 1]."""
+    """Tests that the reranker outputs scores in [0, 1]."""
 
     @patch('src.core.reranker._get_flashrank_reranker')
     def test_scores_bounded_zero_to_one(self, mock_get_reranker):
         from src.core.reranker import NeuralReranker
 
         mock_reranker = MagicMock()
-        def mock_compress(docs, query):
+        def mock_rerank_impl(request):
             scores = [0.95, 0.05, 0.50, 0.10, 0.20]
-            for i, doc in enumerate(docs):
-                doc.metadata["relevance_score"] = scores[i]
-            return docs
+            return [
+                {"id": p["id"], "text": p["text"], "score": scores[i]}
+                for i, p in enumerate(request.passages)
+            ]
         
-        mock_reranker.compress_documents.side_effect = mock_compress
+        mock_reranker.rerank.side_effect = mock_rerank_impl
         mock_get_reranker.return_value = mock_reranker
 
         reranker = NeuralReranker()
@@ -203,12 +204,14 @@ class TestRerankerNormalization(unittest.TestCase):
         from src.core.reranker import NeuralReranker
 
         mock_reranker = MagicMock()
-        def mock_compress(docs, query):
+        def mock_rerank_impl(request):
             scores = [0.9, 0.5, 0.1]
-            for i, doc in enumerate(docs):
-                doc.metadata["relevance_score"] = scores[i]
-            return docs
-        mock_reranker.compress_documents.side_effect = mock_compress
+            results = [
+                {"id": p["id"], "text": p["text"], "score": scores[i]}
+                for i, p in enumerate(request.passages)
+            ]
+            return sorted(results, key=lambda x: x["score"], reverse=True)
+        mock_reranker.rerank.side_effect = mock_rerank_impl
         mock_get_reranker.return_value = mock_reranker
 
         reranker = NeuralReranker()
@@ -229,10 +232,9 @@ class TestRerankerNormalization(unittest.TestCase):
         from src.core.reranker import NeuralReranker
 
         mock_reranker = MagicMock()
-        def mock_compress(docs, query):
-            docs[0].metadata["relevance_score"] = 0.5
-            return docs
-        mock_reranker.compress_documents.side_effect = mock_compress
+        def mock_rerank_impl(request):
+            return [{"id": p["id"], "text": p["text"], "score": 0.5} for p in request.passages]
+        mock_reranker.rerank.side_effect = mock_rerank_impl
         mock_get_reranker.return_value = mock_reranker
 
         reranker = NeuralReranker()
@@ -517,6 +519,22 @@ class TestRetrievalServiceRRF(unittest.TestCase):
         self.assertIn("rrf_score", results[0])
         self.assertGreater(results[0]["rrf_score"], results[1]["rrf_score"])
 
+    def test_retrieval_service_uses_cache_for_identical_query_set(self):
+        from src.core.services.retrieval_service import RetrievalService
+
+        mock_retriever = MagicMock()
+        mock_retriever.retrieve.return_value = ([{"text": "docA", "score": 0.95}], 0.1, 0.2)
+        service = RetrievalService(mock_retriever)
+
+        first_results, _, _, _ = service.retrieve(["Q1"], top_k=2)
+        first_results[0]["score"] = 0.01
+        second_results, embed_lat, db_lat, _ = service.retrieve(["Q1"], top_k=2)
+
+        self.assertEqual(mock_retriever.retrieve.call_count, 1)
+        self.assertEqual(second_results[0]["score"], 0.95)
+        self.assertEqual(embed_lat, 0.0)
+        self.assertEqual(db_lat, 0.0)
+
     @patch('asyncio.to_thread')
     def test_rrf_ranking_logic_async(self, mock_to_thread):
         from src.core.services.retrieval_service import RetrievalService
@@ -552,4 +570,4 @@ class TestRetrievalServiceRRF(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main()

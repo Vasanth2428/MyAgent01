@@ -4,7 +4,7 @@ import logging
 from langchain_core.messages import HumanMessage
 
 from src.core.config import LLM_MODEL, HYDE_MAX_TOKENS, HYDE_TEMPERATURE
-from src.core.model_provider import build_chat_model, message_text
+from src.core.model_provider import build_chat_model, message_text, resolve_provider
 
 logger = logging.getLogger("RAG.HyDE")
 
@@ -16,12 +16,19 @@ _HYDE_PROMPT = (
 
 
 def _get_hyde_model():
+    provider = resolve_provider("hyde", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_chat_model(
         "hyde",
         LLM_MODEL,
         temperature=HYDE_TEMPERATURE,
         max_tokens=HYDE_MAX_TOKENS,
-        api_key_envs=("GROQ_API_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
     )
 
 

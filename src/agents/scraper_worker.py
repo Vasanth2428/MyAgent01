@@ -12,16 +12,23 @@ Keep your output structured, clean, and focus only on the facts related to the q
 
 
 from src.core.config import SCRAPER_WORKER_MODEL_PRIMARY, SCRAPER_WORKER_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback, message_text
+from src.core.model_provider import build_model_with_fallback, message_text, resolve_provider
 
 def get_reasoning_model():
     """Get the configured LLM model for scraped-content reasoning."""
+    provider = resolve_provider("scraper_worker", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "scraper_worker",
         SCRAPER_WORKER_MODEL_PRIMARY,
         SCRAPER_WORKER_MODEL_FALLBACK,
         temperature=0,
-        api_key_envs=("AGENT_API_KEY",),
+        api_key_envs=keys,
     )
 
 

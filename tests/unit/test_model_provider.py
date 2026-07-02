@@ -129,3 +129,22 @@ def test_google_genai_uses_custom_api_key_envs():
     kwargs = constructor.call_args[1]
     assert kwargs.get("api_key") == "test-key-value"
     assert result is base
+
+
+def test_wrap_model_message_cleaning_on_pydantic_model():
+    from pydantic import BaseModel
+    from src.core.model_provider import _wrap_model_message_cleaning
+
+    class MockPydanticModel(BaseModel):
+        model_config = {"extra": "forbid"}
+
+        def invoke(self, input_val, *args, **kwargs):
+            return input_val
+
+        async def ainvoke(self, input_val, *args, **kwargs):
+            return input_val
+
+    model = MockPydanticModel()
+    wrapped = _wrap_model_message_cleaning(model, "openai")
+    assert wrapped.invoke("test") == "test"
+

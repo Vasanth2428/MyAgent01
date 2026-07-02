@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from src.core.config import LLM_MODEL
-from src.core.model_provider import build_chat_model
+from src.core.model_provider import build_chat_model, resolve_provider
 
 logger = logging.getLogger("RAG.Expander")
 
@@ -26,11 +26,18 @@ class _QueryVariations(BaseModel):
 
 
 def _get_expander_model():
+    provider = resolve_provider("expander", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_chat_model(
         "expander",
         LLM_MODEL,
         temperature=0,
-        api_key_envs=("GROQ_API_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
         structured_output=_QueryVariations,
     )
 

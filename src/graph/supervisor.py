@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from src.core.config import SUPERVISOR_MODEL_PRIMARY, SUPERVISOR_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback
+from src.core.model_provider import build_model_with_fallback, resolve_provider
 from src.graph.worker_output_cache import (
     get_worker_output_summary,
 )
@@ -14,7 +14,7 @@ from src.core.blackboard_reference_store import compact_scratchpad
 
 logger = logging.getLogger("MultiAgent.Supervisor")
 
-MAX_PLAN_STEPS = 8
+MAX_PLAN_STEPS = 15
 
 APPROVAL_REGISTRY: Dict[str, set] = {}
 
@@ -65,25 +65,34 @@ CODING TASK SPECIFICATION RULES:
   3. For backend tasks, instruct the worker to use local SQLite databases, FastAPI routes, and write validation checks.
   4. Ensure task instructions are concrete, specifying file paths and expected behaviors. Do not use vague or generic summaries.
   5. **TEST-DRIVEN DEVELOPMENT (TDD) RULES**:
-     - Before dispatching any coding worker task for backend logic, database route implementation, or custom helper scripts, the supervisor **MUST** first dispatch a separate task to write a corresponding unit test file (e.g., `test_main.py` or `tests/test_devices.py`) outlining the expected behaviors, status codes, and input/output contracts using a test runner (like `pytest`).
-     - Enforce that the implementation step is only considered complete when the coding worker executes the test runner (e.g., `pytest [test_file]`) via `run_safe_commands` and it exits with status 0.
+     - Before writing unit tests or backend logic, the supervisor **MUST** first dispatch a task to scaffold/create the basic backend directory structure (e.g. creating the folder and requirements.txt).
+     - The supervisor **MUST** then dispatch a separate task to write a corresponding unit test file (e.g., `test_main.py` or `tests/test_devices.py`) outlining the expected behaviors, status codes, and input/output contracts.
+     - Only then should the supervisor dispatch tasks to implement the actual backend logic and run the tests to verify correctness (verifying they exit with status 0 using `run_safe_commands`).
+     - **AUTO-DEPENDENCY RESOLUTION & INSTALLATION RULES**: When instructing coding_worker to create, modify, or verify frontend (React) or backend (Python) projects, explicitly command it to check imported packages against the local subdirectory `package.json` / `requirements.txt` and install them before executing tests, building, compiling, or starting servers. For nested frontend apps, require `npm --prefix <subdir> install`, `npm --prefix <subdir> install <package>`, and `npm --prefix <subdir> run build`; do not use bare root-level npm commands for subdirectory apps. For Python services, use `python -m pip install -r <subdir>/requirements.txt` or `python -m pip install <package>`.
 """
 
 
 
 class SupervisorDecision(BaseModel):
-    plan: List[str] = Field(description="Step-by-step plan to answer the query", max_length=8)
+    plan: List[str] = Field(description="Step-by-step plan to answer the query (maximum 8 steps)")
     next_agent: str = Field(description="The next agent to route to")
     current_task: str = Field(description="Specific instruction for the next worker", default="")
 
 
 def get_routing_model():
+    provider = resolve_provider("supervisor", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "supervisor",
         SUPERVISOR_MODEL_PRIMARY,
         SUPERVISOR_MODEL_FALLBACK,
         temperature=0,
-        api_key_envs=("GROQ_API_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
         structured_output=SupervisorDecision,
     )
 
@@ -148,7 +157,7 @@ def supervisor_node(state: dict) -> dict:
 
     messages = state.get("messages", [])
     context_notes = state.get("context_notes") or []
-    steps = state.get("steps_remaining", 10)
+    steps = state.get("steps_remaining", 30)
     plan = state.get("plan") or []
     # Retain the compacted scratchpad for error messages, but primary context is in scratchpad_references
     scratchpad = state.get("scratchpad") or ""

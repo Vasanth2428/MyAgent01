@@ -3,7 +3,7 @@ import logging
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from src.core.config import CRITIC_MODEL_PRIMARY, CRITIC_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback, message_text
+from src.core.model_provider import build_model_with_fallback, message_text, resolve_provider
 
 logger = logging.getLogger("MultiAgent.CriticWorker")
 
@@ -21,12 +21,19 @@ Your duties:
 
 def get_reasoning_model():
     """Get the configured LLM model for critique."""
+    provider = resolve_provider("critic", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "critic",
         CRITIC_MODEL_PRIMARY,
         CRITIC_MODEL_FALLBACK,
         temperature=0,
-        api_key_envs=("GROQ_VALIDATION_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
     )
 
 
@@ -105,7 +112,7 @@ Analyze and output:
                     "worker_outputs": {"critic_worker": safe_response},
                     "worker_type": "critic_worker",
                     "next_agent": "supervisor",
-                    "critic_retry_count": retry_count,  # Don't increment on final retry
+                    "critic_retry_count": 0,  # Reset retry count after final retry abort
                     "plan": state_update_plan
                 }
             else:
@@ -144,7 +151,7 @@ Analyze and output:
                 "worker_outputs": {"critic_worker": safe_response},
                 "worker_type": "critic_worker",
                 "next_agent": "supervisor",
-                "critic_retry_count": retry_count
+                "critic_retry_count": 0  # Reset retry count on success
             }
             
         return state_update

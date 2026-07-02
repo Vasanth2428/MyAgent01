@@ -28,6 +28,7 @@ from src.core.config import (
 from src.core.retriever import WeaviateRetriever
 from src.core.persistence import PersistentMemoryStore
 from src.core.compressor import Compressor
+from src.graph.workflow import build_multi_agent_graph
 from src.core.reranker import NeuralReranker
 from src.core.expander import QueryExpander
 from src.core.hyde import HyDEGenerator
@@ -372,6 +373,37 @@ class RAGContextEngine:
         latencies['phase_1_5_hyde_ms'] = round((time.time() - t) * 1000, 2)
         return hyde_doc
 
+    async def _phase_expand_and_hyde_async(self, query: str, mode: str, latencies: dict) -> tuple:
+        search_queries = [query]
+        hyde_doc = ""
+        phase_coroutines = []
+        phase_names = []
+
+        if self.pipeline_config.enable_expansion:
+            phase_names.append("expansion")
+            phase_coroutines.append(self._phase_expand_async(query, mode, latencies))
+        else:
+            logger.info("[P1: EXPANSION] Disabled by pipeline config.")
+            latencies['phase_1_expansion_ms'] = 0.0
+
+        if self.pipeline_config.enable_hyde:
+            phase_names.append("hyde")
+            phase_coroutines.append(self._phase_hyde_async(query, mode, latencies))
+        else:
+            logger.info("[P1.5: HyDE] Disabled by pipeline config.")
+            latencies['phase_1_5_hyde_ms'] = 0.0
+
+        if phase_coroutines:
+            phase_results = await asyncio.gather(*phase_coroutines)
+            results_by_phase = dict(zip(phase_names, phase_results))
+            search_queries = results_by_phase.get("expansion", search_queries)
+            hyde_doc = results_by_phase.get("hyde", "")
+
+        if hyde_doc:
+            search_queries.append(hyde_doc)
+
+        return search_queries, hyde_doc
+
     async def _phase_retrieve_async(self, search_queries: list, top_k: int, source_filter, latencies: dict) -> list:
         results, embed_total, db_total, total_ms = await self.retrieval_service.retrieve_async(
             search_queries, top_k, source_filter
@@ -516,47 +548,31 @@ class RAGContextEngine:
     # Public API (Synchronous backward compatibility wrappers)
     # ------------------------------------------------------------------
 
-    def ask(self, query: str, session_id: str = "default", mode: str = "context_engine",
-            source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Dict:
-        """
-        The primary entry point for querying the RAG system synchronously.
-        """
-        # Run the async ask method inside asyncio run loop (safe outside FastAPI loops)
-        try:
-            return asyncio.run(self.ask_async(
-                query, session_id, mode, source_filter, top_k, context_limit
-            ))
-        except RuntimeError:
-            # Fallback if loop is already running (e.g. in some nested setups)
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self.ask_async(
-                query, session_id, mode, source_filter, top_k, context_limit
-            ))
 
-    def ask_stream(self, query: str, session_id: str = "default", mode: str = "context_engine",
-                   source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None) -> Generator[Dict, None, None]:
-        """
-        Streaming query endpoint synchronously wrapping the async implementation.
-        """
-        loop = asyncio.new_event_loop()
-        try:
-            async_gen = self.ask_stream_async(
-                query, session_id, mode, source_filter, top_k, context_limit
-            )
-            while True:
-                try:
-                    event = loop.run_until_complete(async_gen.__anext__())
-                    yield event
-                except StopAsyncIteration:
-                    break
-        finally:
-            loop.close()
 
     # ------------------------------------------------------------------
     # Public API (Asynchronous native implementation)
     # ------------------------------------------------------------------
 
     async def ask_async(self, query: str, session_id: str = "default", mode: str = "context_engine",
+                  source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None, bypass_hitl: bool = False,
+                  model_provider: Optional[str] = None, model_name: Optional[str] = None) -> Dict:
+        from src.core.model_provider import active_model_provider, active_model_name
+        token_provider = None
+        token_name = None
+        if model_provider:
+            token_provider = active_model_provider.set(model_provider)
+        if model_name:
+            token_name = active_model_name.set(model_name)
+        try:
+            return await self._ask_async_internal(query, session_id, mode, source_filter, top_k, context_limit, bypass_hitl)
+        finally:
+            if token_provider:
+                active_model_provider.reset(token_provider)
+            if token_name:
+                active_model_name.reset(token_name)
+
+    async def _ask_async_internal(self, query: str, session_id: str = "default", mode: str = "context_engine",
                   source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None, bypass_hitl: bool = False) -> Dict:
         """
         The primary async entry point for querying the RAG system.
@@ -603,12 +619,17 @@ class RAGContextEngine:
         # Multi-Agent Mode Execution
         if mode == "agentic":
             from langchain_core.messages import HumanMessage, AIMessage
-            from src.graph.workflow import get_graph_config
+            from src.graph.workflow import build_multi_agent_graph
+            # Async checkpointer not used; using sync graph
             import time as time_module
-            
+            import os
             t_start = time_module.time()
-            config = get_graph_config(session_id)
             
+            # Use the pre-built multi-agent graph (sync) for agentic mode
+            # Build a fresh graph for this request (sync)
+            graph = build_multi_agent_graph()
+            config = {"configurable": {"thread_id": session_id}}
+
             # Fetch history from memory.db
             memory_history = self.persistent_memory.get_history(session_id)
             messages = []
@@ -643,10 +664,9 @@ class RAGContextEngine:
                 "bypass_hitl": bypass_hitl
             }
             
-            if hasattr(self.multi_agent_checkpointer, "aget_tuple"):
-                result = await self.multi_agent_graph.ainvoke(initial_state, config=config)
-            else:
-                result = await asyncio.to_thread(self.multi_agent_graph.invoke, initial_state, config=config)
+            # Directly invoke the graph (async supported)
+            # Run sync graph in thread to keep async method non‑blocking
+            result = await asyncio.to_thread(graph.invoke, initial_state, config=config)
             final_answer = result.get("final_answer", "")
             if not final_answer and result.get("messages"):
                 final_answer = result["messages"][-1].content
@@ -725,15 +745,7 @@ class RAGContextEngine:
             # Conditionally run expensive features based on confidence
             if self.pipeline_config.should_use_full_pipeline(top_score):
                 logger.info(f"[P1: EXPANSION] Low confidence ({top_score:.2f}), running full pipeline...")
-                # Issue #7: Run expansion and HyDE sequentially instead of concurrently
-                # to prevent LLM API contention and vector store connection pool exhaustion.
-                search_queries = await self._phase_expand_async(query, mode, latencies)
-                
-                # Only run HyDE if expansion didn't produce sufficient variations
-                # Run HyDE regardless of expansion length
-                hyde_doc = await self._phase_hyde_async(query, mode, latencies)
-                if hyde_doc:
-                    search_queries.append(hyde_doc)
+                search_queries, hyde_doc = await self._phase_expand_and_hyde_async(query, mode, latencies)
             else:
                 logger.info(f"[P1: EXPANSION] High confidence ({top_score:.2f}), skipping expansion/HyDE for speed.")
         
@@ -908,7 +920,10 @@ class RAGContextEngine:
                     if state_delta.get("waiting_for_approval"):
                         approval_filepath = state_delta.get("approval_filepath", "")
                         approval_tool = state_delta.get("approval_tool", "")
-                        yield {"event": "blocked_tool", "filepath": approval_filepath, "tool": approval_tool}
+                        from src.agents.coding_worker import get_pending_approval
+                        pending = get_pending_approval(session_id)
+                        diff_val = pending.get("diff", "") if pending else ""
+                        yield {"event": "blocked_tool", "filepath": approval_filepath, "tool": approval_tool, "diff": diff_val}
                         yield {"event": "waiting_for_approval", "filepath": approval_filepath, "tool": approval_tool}
                         return
 
@@ -1077,6 +1092,25 @@ class RAGContextEngine:
             yield {"event": "error", "message": err_msg}
 
     async def ask_stream_async(self, query: str, session_id: str = "default", mode: str = "context_engine",
+                         source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None, bypass_hitl: bool = False,
+                         model_provider: Optional[str] = None, model_name: Optional[str] = None) -> AsyncGenerator[Dict, None]:
+        from src.core.model_provider import active_model_provider, active_model_name
+        token_provider = None
+        token_name = None
+        if model_provider:
+            token_provider = active_model_provider.set(model_provider)
+        if model_name:
+            token_name = active_model_name.set(model_name)
+        try:
+            async for event in self._ask_stream_async_internal(query, session_id, mode, source_filter, top_k, context_limit, bypass_hitl):
+                yield event
+        finally:
+            if token_provider:
+                active_model_provider.reset(token_provider)
+            if token_name:
+                active_model_name.reset(token_name)
+
+    async def _ask_stream_async_internal(self, query: str, session_id: str = "default", mode: str = "context_engine",
                          source_filter: str = None, top_k: int = 5, context_limit: Optional[int] = None, bypass_hitl: bool = False) -> AsyncGenerator[Dict, None]:
         """
         Asynchronous streaming query endpoint. Yields progress updates and LLM output tokens.
@@ -1123,14 +1157,7 @@ class RAGContextEngine:
             
             if self.pipeline_config.should_use_full_pipeline(top_score):
                 yield {"event": "thought", "text": "Low confidence detected, expanding query and generating HyDE document..."}
-                # Issue #7: Run expansion and HyDE sequentially instead of concurrently
-                # to prevent LLM API contention and vector store connection pool exhaustion.
-                search_queries = await self._phase_expand_async(query, mode, latencies)
-                
-                # Run HyDE sequentially regardless of expansion length
-                hyde_doc = await self._phase_hyde_async(query, mode, latencies)
-                if hyde_doc:
-                    search_queries.append(hyde_doc)
+                search_queries, hyde_doc = await self._phase_expand_and_hyde_async(query, mode, latencies)
                 yield {"event": "action", "tool": "Query Expansion & HyDE", "input": f"Variations: {search_queries}"}
             else:
                 yield {"event": "thought", "text": f"High confidence ({top_score:.2f}), using fast path..."}

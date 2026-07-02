@@ -19,7 +19,7 @@ from src.agents.report_worker import report_worker_node
 from src.agents.coding_worker import coding_worker_node
 from src.agents.code_critic_worker import code_critic_worker_node
 
-MAX_RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", "20"))
+MAX_RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", "50"))
 
 
 def route_based_on_next_agent(state: dict) -> str:
@@ -173,6 +173,14 @@ def build_multi_agent_graph(checkpointer=None):
     graph = workflow.compile(checkpointer=checkpointer, store=InMemoryStore())
     logger.info("Multi-agent workflow compiled successfully.")
     return graph
+
+def build_agentic_graph(async_checkpointer=None):
+    """Convenience wrapper for building the multi‑agent graph used by the agentic pipeline.
+    It simply forwards the provided async checkpointer (or creates a default one) to
+    ``build_multi_agent_graph`` so that callers can import ``build_agentic_graph``
+    without needing to know the internal naming.
+    """
+    return build_multi_agent_graph(checkpointer=async_checkpointer)
 
 
 def get_graph_config(thread_id: str = "default"):

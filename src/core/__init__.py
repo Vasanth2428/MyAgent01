@@ -21,7 +21,8 @@ Code Intelligence Layer (for repository analysis and security auditing):
 - CodeRetrievalService: Repository-aware code search and analysis
 """
 
-from src.core.engine import RAGContextEngine
+# Lazy import to avoid circular dependencies; import when needed
+# from src.core.engine import RAGContextEngine
 from src.core.retriever import WeaviateRetriever
 from src.core.memory import ConversationMemory, MemoryEntry
 from src.core.persistence import PersistentMemoryStore

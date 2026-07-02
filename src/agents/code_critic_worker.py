@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from src.core.config import CODE_CRITIC_MODEL_PRIMARY, CODE_CRITIC_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback
+from src.core.model_provider import build_model_with_fallback, resolve_provider
 
 logger = logging.getLogger("MultiAgent.CodeCriticWorker")
 
@@ -39,12 +39,19 @@ class CriticReport(BaseModel):
 
 def get_critic_model():
     """Return the configured model with structured CriticReport output."""
+    provider = resolve_provider("code_critic", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "code_critic",
         CODE_CRITIC_MODEL_PRIMARY,
         CODE_CRITIC_MODEL_FALLBACK,
         temperature=0,
-        api_key_envs=("GROQ_VALIDATION_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
         structured_output=CriticReport,
     )
 
@@ -172,7 +179,7 @@ def code_critic_worker_node(state: dict) -> dict:
         state_update["plan"] = current_plan + [f"FIX: {findings_text[:500]}"]
         state_update["current_task"] = f"CRITIC RETRY ({retry_count + 1}/2): Address these specific issues found by the code critic: {findings_text[:800]}"
         state_update["critic_retry_count"] = retry_count + 1
-    elif is_invalid and retry_count >= 2:
+    else:
         # Issue #2: Reset retry count to prevent stale state from blocking future critic cycles
         state_update["critic_retry_count"] = 0
         

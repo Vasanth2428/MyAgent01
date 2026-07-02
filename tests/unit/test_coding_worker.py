@@ -6,6 +6,18 @@ from src.agents.coding_worker import coding_worker_node, tools_map, is_task_comp
 
 
 class TestCodingWorker(unittest.TestCase):
+    def setUp(self):
+        self.val_patcher = patch("src.agents.coding_worker.get_validation_model")
+        self.mock_get_val_model = self.val_patcher.start()
+        mock_response = MagicMock()
+        mock_response.content = '{"is_compatible": true, "explanation": ""}'
+        self.mock_val_llm = MagicMock()
+        self.mock_val_llm.invoke.return_value = mock_response
+        self.mock_get_val_model.return_value = self.mock_val_llm
+
+    def tearDown(self):
+        self.val_patcher.stop()
+
     @patch("src.agents.coding_worker.get_coding_model")
     def test_coding_worker_node_missing_task(self, mock_get_model):
         """Coding worker should exit gracefully if no task is provided."""

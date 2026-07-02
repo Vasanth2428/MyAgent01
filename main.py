@@ -35,7 +35,7 @@ if sys.platform.startswith("win"):
 print(f"DEBUG: sys.executable = {sys.executable}", flush=True)
 print(f"DEBUG: sentence-transformers = {sentence_transformers.__version__}", flush=True)
 print(f"DEBUG: transformers = {transformers.__version__}", flush=True)
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, HTTPException, UploadFile, File, Response, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -122,6 +122,23 @@ logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 # Global instances initialized during lifespan
 rag = None
 retriever = None
+_model_warmup_task = None
+
+
+def _warm_local_models() -> None:
+    logger.info("Pre-warming local embedding and reranker models...")
+    from src.core.services.grounding_service import _get_shared_embedding_model
+    _ = _get_shared_embedding_model()
+    from src.core.reranker import _get_flashrank_reranker
+    _ = _get_flashrank_reranker()
+    logger.info("Heavy ML models successfully pre-warmed.")
+
+
+async def _warm_local_models_background() -> None:
+    try:
+        await asyncio.to_thread(_warm_local_models)
+    except Exception as warm_err:
+        logger.warning(f"Background model warmup failed: {warm_err}")
 
 
 @asynccontextmanager
@@ -130,7 +147,7 @@ async def lifespan(app: FastAPI):
     Handles startup and shutdown events for the FastAPI application.
     Initializes the heavy ML models and database connections once.
     """
-    global rag, retriever
+    global rag, retriever, _model_warmup_task
     try:
         logger.info("Starting Modular RAG Context Engine...")
         retriever = WeaviateRetriever()
@@ -140,15 +157,9 @@ async def lifespan(app: FastAPI):
         from src.graph.checkpointer import setup_async_checkpointer
         
         async with setup_async_checkpointer() as checkpointer:
-            logger.info("Pre-warming local embedding and reranker models...")
-            from src.core.services.grounding_service import _get_shared_embedding_model
-            _ = _get_shared_embedding_model()
-            from src.core.reranker import _get_flashrank_reranker
-            _ = _get_flashrank_reranker()
-            logger.info("Heavy ML models successfully pre-warmed.")
-            
             rag = RAGContextEngine(retriever, pipeline_config, checkpointer=checkpointer)
             logger.info("RAG Engine successfully initialized.")
+            _model_warmup_task = asyncio.create_task(_warm_local_models_background())
             try:
                 summary = rag.registry.get_registry_summary()
                 logger.info(f"Knowledge Registry Summary: Datasets={summary['datasets']}, Domains={summary['domains']}, Total Docs={summary['total_documents_count']}")
@@ -161,6 +172,10 @@ async def lifespan(app: FastAPI):
         traceback.print_exc()
         yield
     finally:
+        if _model_warmup_task and not _model_warmup_task.done():
+            _model_warmup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await _model_warmup_task
         if rag:
             logger.info("Shutting down RAG Engine...")
             rag.close()
@@ -315,6 +330,8 @@ class QueryRequest(BaseModel):
     source_filter: Optional[str] = None
     context_limit: Optional[int] = None
     bypass_hitl: bool = False
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
 
 
 class CreateSessionRequest(BaseModel):
@@ -360,7 +377,9 @@ async def query_rag(request: QueryRequest):
         source_filter=request.source_filter,
         top_k=5,
         context_limit=request.context_limit,
-        bypass_hitl=request.bypass_hitl
+        bypass_hitl=request.bypass_hitl,
+        model_provider=request.model_provider,
+        model_name=request.model_name
     )
 
 
@@ -382,7 +401,9 @@ async def query_rag_stream(request: QueryRequest):
                 mode=request.mode,
                 source_filter=request.source_filter,
                 context_limit=request.context_limit,
-                bypass_hitl=request.bypass_hitl
+                bypass_hitl=request.bypass_hitl,
+                model_provider=request.model_provider,
+                model_name=request.model_name
             ):
                 yield f"data: {_serialize_event(event)}\n\n"
         except asyncio.CancelledError:
@@ -628,7 +649,12 @@ async def get_pending_approval(session_id: str):
     from src.agents.coding_worker import get_pending_approval
     pending = get_pending_approval(session_id)
     if pending:
-        return {"has_pending": True, "filepath": pending["filepath"], "tool": pending["tool"]}
+        return {
+            "has_pending": True, 
+            "filepath": pending["filepath"], 
+            "tool": pending["tool"],
+            "diff": pending.get("diff", "")
+        }
     return {"has_pending": False}
 
 @app.post("/approve_changes")
@@ -749,7 +775,10 @@ async def resume_stream(session_id: str):
                         if state_delta.get("waiting_for_approval"):
                             approval_filepath = state_delta.get("approval_filepath", "")
                             approval_tool = state_delta.get("approval_tool", "")
-                            yield f"data: {_serialize_event({'event': 'blocked_tool', 'filepath': approval_filepath, 'tool': approval_tool})}\n\n"
+                            from src.agents.coding_worker import get_pending_approval
+                            pending = get_pending_approval(session_id)
+                            diff_val = pending.get("diff", "") if pending else ""
+                            yield f"data: {_serialize_event({'event': 'blocked_tool', 'filepath': approval_filepath, 'tool': approval_tool, 'diff': diff_val})}\n\n"
                             yield f"data: {_serialize_event({'event': 'waiting_for_approval', 'filepath': approval_filepath, 'tool': approval_tool})}\n\n"
                             return
 
@@ -771,11 +800,16 @@ async def resume_stream(session_id: str):
                             approval_filepath = state_values.get("approval_filepath", "")
                             approval_tool = state_values.get("approval_tool", "")
                             
+                            from src.agents.coding_worker import get_pending_approval
+                            pending = get_pending_approval(session_id)
+                            diff_val = pending.get("diff", "") if pending else ""
+                            
                             approval_packet = {
                                 "waiting_for_approval": True,
                                 "pending_file_approvals": pending_file_approvals,
                                 "approval_filepath": approval_filepath,
                                 "approval_tool": approval_tool,
+                                "diff": diff_val,
                                 "text": "\n\n⚠️ **Action Required:** This modification requires security validation. Please approve or reject below."
                             }
                             yield f"data: {_serialize_event(approval_packet)}\n\n"
@@ -836,11 +870,10 @@ async def git_status():
     files = []
     if status_output:
         for line in status_output.split("\n"):
-            line = line.strip()
-            if not line or len(line) < 3:
+            if not line or len(line) < 4:
                 continue
             xy = line[:2]
-            file_path = line[3:]
+            file_path = line[3:].strip()
             
             # Map index/worktree status codes
             status_tag = 'untracked'
@@ -957,12 +990,13 @@ async def terminal_endpoint(websocket: WebSocket):
     
     # Spawn powershell on Windows, bash on Posix
     shell = "powershell.exe" if sys.platform == "win32" else "bash"
+    args = ["-NoLogo"] if sys.platform == "win32" else []
     
     try:
         creationflags = 0x08000000 if sys.platform == "win32" else 0
         proc = await asyncio.create_subprocess_exec(
             shell,
-            "-NoLogo",
+            *args,
             cwd=WORKSPACE_ROOT,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

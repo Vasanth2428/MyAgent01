@@ -2,19 +2,26 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from src.core.config import SYNTHESIZER_MODEL_PRIMARY, SYNTHESIZER_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback, message_text
+from src.core.model_provider import build_model_with_fallback, message_text, resolve_provider
 
 logger = logging.getLogger("MultiAgent.Synthesizer")
 
 
 def get_reasoning_model():
     """Get the configured LLM model for synthesis."""
+    provider = resolve_provider("synthesizer", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
     return build_model_with_fallback(
         "synthesizer",
         SYNTHESIZER_MODEL_PRIMARY,
         SYNTHESIZER_MODEL_FALLBACK,
         temperature=0.3,
-        api_key_envs=("GROQ_API_KEY", "AGENT_API_KEY"),
+        api_key_envs=keys,
     )
 
 

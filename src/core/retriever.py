@@ -322,7 +322,11 @@ class WeaviateRetriever:
                     f"Weaviate batch insert failed for {len(failed)} objects. First error: {failed[0].message}"
                 )
 
-        self.execute_with_retry(_batch_insert)
+        try:
+            self.execute_with_retry(_batch_insert)
+        except Exception as e:
+            logger.error(f"Weaviate batch insert failed dynamically, document chunks saved locally only: {e}")
+            self._connected = False
 
         t_batch = time.time()
         logger.info(
@@ -408,25 +412,58 @@ class WeaviateRetriever:
                 return_metadata=wvc.query.MetadataQuery(score=True)
             )
 
-        response = self.execute_with_retry(_query_db)
+        try:
+            response = self.execute_with_retry(_query_db)
 
-        t_search = time.time()
-        search_latency_ms = (t_search - t_start) * 1000
+            t_search = time.time()
+            search_latency_ms = (t_search - t_start) * 1000
 
-        res = [{
-            "text": obj.properties["text"],
-            "tags": obj.properties.get("tags") or [],
-            "source": obj.properties.get("source"),
-            "score": obj.metadata.score,
-            "content_hash": obj.properties.get("content_hash"),
-            "document_id": obj.properties.get("document_id"),
-        } for obj in response.objects]
+            res = [{
+                "text": obj.properties["text"],
+                "tags": obj.properties.get("tags") or [],
+                "source": obj.properties.get("source"),
+                "score": obj.metadata.score,
+                "content_hash": obj.properties.get("content_hash"),
+                "document_id": obj.properties.get("document_id"),
+            } for obj in response.objects]
 
-        logger.info(
-            f"Hybrid search (alpha={alpha}) found {len(res)} results "
-            f"in {(t_search - t_start)*1000:.1f}ms"
-        )
-        return res, embed_latency_ms, search_latency_ms
+            logger.info(
+                f"Hybrid search (alpha={alpha}) found {len(res)} results "
+                f"in {(t_search - t_start)*1000:.1f}ms"
+            )
+            return res, embed_latency_ms, search_latency_ms
+        except Exception as e:
+            logger.error(f"Weaviate query failed dynamically, falling back to local search: {e}")
+            self._connected = False
+            
+            t_fallback_start = time.time()
+            results = []
+            keywords = [w.lower() for w in re.findall(r'\w+', query) if len(w) > 3]
+            for doc in self.local_docs:
+                if doc.get("is_code", False):
+                    continue
+                if source_filter and doc["source"] != source_filter:
+                    continue
+                
+                keyword_score = 0.0
+                text_lower = doc["text"].lower()
+                for kw in keywords:
+                    if kw in text_lower:
+                        keyword_score += 1.0
+                keyword_score = keyword_score / (len(keywords) if keywords else 1)
+
+                results.append({
+                    "text": doc["text"],
+                    "source": doc["source"],
+                    "tags": doc["tags"],
+                    "score": keyword_score,
+                    "content_hash": doc.get("content_hash", ""),
+                    "document_id": doc["document_id"]
+                })
+            
+            results.sort(key=lambda x: x["score"], reverse=True)
+            search_latency_ms = (time.time() - t_fallback_start) * 1000
+            return results[:top_k], embed_latency_ms, search_latency_ms
 
     def get_count(self) -> int:
         """Returns the total number of objects in the RAGKnowledge collection."""
@@ -437,8 +474,10 @@ class WeaviateRetriever:
                 res = self.collection.aggregate.over_all(total_count=True)
                 return res.total_count
             return self.execute_with_retry(_aggregate)
-        except Exception:
-            return 0
+        except Exception as e:
+            logger.warning(f"Weaviate aggregate count query failed, falling back to local doc count: {e}")
+            self._connected = False
+            return len(self.local_docs)
 
     def add_code_chunks(self, chunks: List[Dict[str, Any]]) -> List[str]:
         """
@@ -514,7 +553,11 @@ class WeaviateRetriever:
                     "insert",
                     f"Weaviate batch insert failed for {len(failed)} objects. First error: {failed[0].message}"
                 )
-        self.execute_with_retry(_batch_insert)
+        try:
+            self.execute_with_retry(_batch_insert)
+        except Exception as e:
+            logger.error(f"Weaviate code chunk batch insert failed dynamically, code chunks saved locally only: {e}")
+            self._connected = False
         return indexed_uuids
 
     def search_code_chunks(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
@@ -555,16 +598,39 @@ class WeaviateRetriever:
                 filters=wvc.query.Filter.by_property("is_code").equal(True),
                 return_properties=["text", "symbol_name", "symbol_type", "filepath", "start_line", "end_line", "source"]
             )
-        response = self.execute_with_retry(_query_db)
-        return [{
-            "text": obj.properties["text"],
-            "symbol_name": obj.properties.get("symbol_name"),
-            "symbol_type": obj.properties.get("symbol_type"),
-            "filepath": obj.properties.get("filepath"),
-            "start_line": obj.properties.get("start_line"),
-            "end_line": obj.properties.get("end_line"),
-            "source": obj.properties.get("source"),
-        } for obj in response.objects]
+        try:
+            response = self.execute_with_retry(_query_db)
+            return [{
+                "text": obj.properties["text"],
+                "symbol_name": obj.properties.get("symbol_name"),
+                "symbol_type": obj.properties.get("symbol_type"),
+                "filepath": obj.properties.get("filepath"),
+                "start_line": obj.properties.get("start_line"),
+                "end_line": obj.properties.get("end_line"),
+                "source": obj.properties.get("source"),
+            } for obj in response.objects]
+        except Exception as e:
+            logger.error(f"Weaviate code chunk query failed dynamically, falling back to local search: {e}")
+            self._connected = False
+            
+            results = []
+            keywords = [w.lower() for w in re.findall(r'\w+', query) if len(w) > 3]
+            for chunk in self.local_code_chunks:
+                # Keyword matching
+                keyword_score = 0.0
+                text_lower = chunk["text"].lower()
+                for kw in keywords:
+                    if kw in text_lower:
+                        keyword_score += 1.0
+                keyword_score = keyword_score / (len(keywords) if keywords else 1)
+
+                results.append({
+                    "chunk": chunk,
+                    "score": keyword_score
+                })
+
+            results.sort(key=lambda x: x["score"], reverse=True)
+            return [item["chunk"] for item in results[:limit]]
 
     def close(self):
         """Safely terminates the connection to Weaviate Cloud."""

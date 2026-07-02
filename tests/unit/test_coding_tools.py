@@ -219,3 +219,44 @@ SyntaxError: expected ':'
     assert "crypto_portfolio_frontend/src/App.jsx" in parsed_fe
     assert "Line: 15" in parsed_fe
 
+
+def test_is_safe_command_validation():
+    from src.tools.coding_tools import _is_safe_command
+
+    # 1. Valid npm commands with prefixes and flags
+    assert _is_safe_command(["npm", "--prefix", "dir", "install", "bootstrap@^5.3.0"]) is True
+    assert _is_safe_command(["npm", "--prefix", "dir", "install", "-D", "tailwindcss"]) is True
+    assert _is_safe_command(["npm", "--prefix", "dir", "run", "build"]) is True
+    assert _is_safe_command(["npm", "install", "--legacy-peer-deps"]) is True
+
+    # 2. Blocked npm commands
+    assert _is_safe_command(["npm", "--prefix", "../outside", "install"]) is False
+    assert _is_safe_command(["npm", "install", "pkg; echo attack"]) is False
+    assert _is_safe_command(["npm", "--prefix", "dir", "run", "invalid_script"]) is False
+
+    # 3. Valid pip commands with flags and versions
+    assert _is_safe_command(["python", "-m", "pip", "install", "numpy>=1.20.0", "--upgrade"]) is True
+    assert _is_safe_command(["python", "-m", "pip", "install", "-r", "dir/requirements.txt", "--upgrade"]) is True
+
+    # 4. Blocked pip commands
+    assert _is_safe_command(["python", "-m", "pip", "install", "-r", "../outside/requirements.txt"]) is False
+    assert _is_safe_command(["python", "-m", "pip", "install", "numpy; echo attack"]) is False
+
+
+def test_prepare_command_execution_uses_npm_prefix_as_cwd():
+    from src.tools.coding_tools import _prepare_command_execution
+
+    args, cwd = _prepare_command_execution(["npm", "--prefix", "dir", "install", "bootstrap@^5.3.0"])
+
+    assert args == ["npm", "install", "bootstrap@^5.3.0"]
+    assert cwd == os.path.join(WORKSPACE_ROOT, "dir")
+
+
+def test_prepare_command_execution_blocks_unsafe_npm_prefix_cwd():
+    from src.tools.coding_tools import _prepare_command_execution
+
+    args, cwd = _prepare_command_execution(["npm", "--prefix", "../outside", "install"])
+
+    assert args == ["npm", "--prefix", "../outside", "install"]
+    assert cwd == WORKSPACE_ROOT
+

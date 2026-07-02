@@ -9,11 +9,17 @@ the results to find the most relevant document chunks.
 import time
 import logging
 import asyncio
+import copy
+import threading
+from collections import OrderedDict
 from typing import List, Dict, Tuple, Optional
 from src.core.config import MAX_CANDIDATES
 from src.core.retriever import WeaviateRetriever
 
 logger = logging.getLogger("RAG.Services.Retrieval")
+
+RETRIEVAL_CACHE_TTL_SECONDS = 120
+RETRIEVAL_CACHE_MAX_ENTRIES = 128
 
 
 class RetrievalService:
@@ -31,6 +37,63 @@ class RetrievalService:
 
     def __init__(self, retriever: WeaviateRetriever):
         self.retriever = retriever  # Our connection to the document database
+        self._cache = OrderedDict()
+        self._cache_lock = threading.RLock()
+
+    def clear_cache(self) -> None:
+        with self._cache_lock:
+            self._cache.clear()
+
+    def _cache_key(self, search_queries: List[str], top_k: int, source_filter: Optional[str]) -> tuple:
+        return tuple(search_queries), top_k, source_filter
+
+    def _get_cached(self, key: tuple) -> Optional[List[Dict]]:
+        now = time.time()
+        with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is None:
+                return None
+
+            created_at, results = cached
+            if now - created_at > RETRIEVAL_CACHE_TTL_SECONDS:
+                self._cache.pop(key, None)
+                return None
+
+            self._cache.move_to_end(key)
+            return copy.deepcopy(results)
+
+    def _store_cached(self, key: tuple, results: List[Dict]) -> None:
+        with self._cache_lock:
+            self._cache[key] = (time.time(), copy.deepcopy(results))
+            self._cache.move_to_end(key)
+            while len(self._cache) > RETRIEVAL_CACHE_MAX_ENTRIES:
+                self._cache.popitem(last=False)
+
+    def _merge_ranked_results(self, query_results: List[Tuple[List[Dict], float, float]]) -> Tuple[List[Dict], float, float]:
+        candidates_by_text = {}
+        rrf_scores = {}
+        k_rrf = 60
+        embed_total = 0.0
+        db_total = 0.0
+
+        for retrieved, embed_lat, db_lat in query_results:
+            for rank, r in enumerate(retrieved, 1):
+                text = r["text"]
+                score = r.get("score", 0.0)
+                if text not in candidates_by_text:
+                    candidates_by_text[text] = copy.deepcopy(r)
+                elif score > candidates_by_text[text].get("score", 0.0):
+                    candidates_by_text[text]["score"] = score
+
+                rrf_scores[text] = rrf_scores.get(text, 0.0) + (1.0 / (k_rrf + rank))
+            embed_total += embed_lat
+            db_total += db_lat
+
+        for text, candidate in candidates_by_text.items():
+            candidate["rrf_score"] = rrf_scores[text]
+
+        sorted_candidates = sorted(candidates_by_text.values(), key=lambda x: x.get("rrf_score", 0.0), reverse=True)
+        return sorted_candidates[:MAX_CANDIDATES], round(embed_total, 2), round(db_total, 2)
 
     def retrieve(self, search_queries: List[str], top_k: int, source_filter: Optional[str] = None) -> Tuple[List[Dict], float, float, float]:
         """
@@ -48,37 +111,19 @@ class RetrievalService:
             - Total time in ms
         """
         t = time.time()
+        cache_key = self._cache_key(search_queries, top_k, source_filter)
+        cached_results = self._get_cached(cache_key)
+        if cached_results is not None:
+            logger.info("[P2: RETRIEVAL] Cache hit for retrieval query set.")
+            return cached_results, 0.0, 0.0, round((time.time() - t) * 1000, 2)
+
         logger.info("[P2: RETRIEVAL] Searching for relevant documents...")
-        candidates_by_text = {}  # Track unique documents by their text content
-        rrf_scores = {}
-        k_rrf = 60
-        embed_total = 0.0
-        db_total = 0.0
-
-        for q in search_queries:
-            retrieved, embed_lat, db_lat = self.retriever.retrieve(q, top_k=top_k, source_filter=source_filter)
-            for rank, r in enumerate(retrieved, 1):
-                text = r["text"]
-                score = r.get("score", 0.0)
-                # Keep the highest-scoring version if we see the same text twice
-                if text not in candidates_by_text:
-                    candidates_by_text[text] = r
-                else:
-                    if score > candidates_by_text[text].get("score", 0.0):
-                        candidates_by_text[text]["score"] = score
-                
-                # Accumulate RRF rank score
-                rrf_scores[text] = rrf_scores.get(text, 0.0) + (1.0 / (k_rrf + rank))
-            embed_total += embed_lat
-            db_total += db_lat
-
-        # Add RRF score to metadata
-        for text, candidate in candidates_by_text.items():
-            candidate["rrf_score"] = rrf_scores[text]
-
-        # Sort by RRF score and limit to MAX_CANDIDATES
-        sorted_candidates = sorted(candidates_by_text.values(), key=lambda x: x.get("rrf_score", 0.0), reverse=True)
-        results = sorted_candidates[:MAX_CANDIDATES]
+        query_results = [
+            self.retriever.retrieve(q, top_k=top_k, source_filter=source_filter)
+            for q in search_queries
+        ]
+        results, embed_total, db_total = self._merge_ranked_results(query_results)
+        self._store_cached(cache_key, results)
 
         logger.info(f" -> Found {len(results)} unique relevant document chunks.")
         total_ms = round((time.time() - t) * 1000, 2)
@@ -104,6 +149,12 @@ class RetrievalService:
             - Total time in ms
         """
         t = time.time()
+        cache_key = self._cache_key(search_queries, top_k, source_filter)
+        cached_results = self._get_cached(cache_key)
+        if cached_results is not None:
+            logger.info("[P2: RETRIEVAL] Cache hit for retrieval query set.")
+            return cached_results, 0.0, 0.0, round((time.time() - t) * 1000, 2)
+
         logger.info("[P2: RETRIEVAL] Searching concurrently for relevant documents...")
         
         async def single_retrieve(q):
@@ -114,32 +165,8 @@ class RetrievalService:
         # Run all searches at once
         tasks = [single_retrieve(q) for q in search_queries]
         query_results = await asyncio.gather(*tasks)
-
-        candidates_by_text = {}
-        rrf_scores = {}
-        k_rrf = 60
-        embed_total = 0.0
-        db_total = 0.0
-
-        for retrieved, embed_lat, db_lat in query_results:
-            for rank, r in enumerate(retrieved, 1):
-                text = r["text"]
-                score = r.get("score", 0.0)
-                if text not in candidates_by_text:
-                    candidates_by_text[text] = r
-                else:
-                    if score > candidates_by_text[text].get("score", 0.0):
-                        candidates_by_text[text]["score"] = score
-                
-                rrf_scores[text] = rrf_scores.get(text, 0.0) + (1.0 / (k_rrf + rank))
-            embed_total += embed_lat
-            db_total += db_lat
-
-        for text, candidate in candidates_by_text.items():
-            candidate["rrf_score"] = rrf_scores[text]
-
-        sorted_candidates = sorted(candidates_by_text.values(), key=lambda x: x.get("rrf_score", 0.0), reverse=True)
-        results = sorted_candidates[:MAX_CANDIDATES]
+        results, embed_total, db_total = self._merge_ranked_results(query_results)
+        self._store_cached(cache_key, results)
 
         logger.info(f" -> Found {len(results)} unique relevant document chunks (searched in parallel).")
         total_ms = round((time.time() - t) * 1000, 2)
