@@ -28,6 +28,19 @@ def merge_dicts(left: Dict[str, any], right: Dict[str, any]) -> Dict[str, any]:
     return merged
 
 
+def merge_created_files(left: List[str], right: List[str]) -> List[str]:
+    """Reducer that merges created_files lists, deduplicating while preserving order."""
+    if left is None:
+        left = []
+    if right is None:
+        right = []
+    merged = list(left)
+    for item in right:
+        if item and item not in merged:
+            merged.append(item)
+    return merged
+
+
 def merge_scratchpad_references(left: List[str], right: List[str]) -> List[str]:
     """Reducer that merges two lists of scratchpad references,
     handling both full replacements and partial/parallel updates.
@@ -103,7 +116,8 @@ class AgentState(TypedDict):
     coding_worker_resume_tool_call_id: Optional[str]
     bypass_hitl: Optional[bool]
     patch_is_verified: bool
-    active_project: str
+    active_project: Optional[str]
+    created_files: Annotated[List[str], merge_created_files]
     # TEMPORARY FIELDS FOR WORKER NODE COMPATIBILITY (cleared after processing)
     scratchpad: Annotated[str, merge_scratchpads]  # Temporary text scratchpad for worker nodes
     worker_outputs: Annotated[Dict[str, str], merge_dicts]  # Temporary full text outputs for worker nodes
@@ -144,7 +158,8 @@ def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False)
         "coding_worker_resume_tool_result": None,
         "coding_worker_resume_tool_call_id": None,
         "patch_is_verified": False,
-        "active_project": "",
+        "active_project": None,
+        "created_files": [],
         "retry_counter": 0
     }
 

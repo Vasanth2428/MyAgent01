@@ -59,7 +59,7 @@ def route_based_on_next_agent(state: dict) -> str:
 def route_after_coding_worker(state: dict) -> str:
     if state.get("waiting_for_approval"):
         return "supervisor_node"
-    return "aggregate_parallel_results_node"
+    return "code_critic_worker_node"
 
 
 def aggregate_parallel_results_node(state: dict) -> dict:
@@ -156,7 +156,7 @@ def build_multi_agent_graph(checkpointer=None):
         "coding_worker_node",
         route_after_coding_worker,
         {
-            "aggregate_parallel_results_node": "aggregate_parallel_results_node",
+            "code_critic_worker_node": "code_critic_worker_node",
             "supervisor_node": "supervisor_node",
             END: END,
         },

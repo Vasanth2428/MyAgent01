@@ -479,7 +479,7 @@ def _is_safe_command(cmd_args: List[str]) -> bool:
             
     executable = cmd_args[0]
     
-    if executable not in ["python", "pytest", "npm", "git"]:
+    if executable not in ["python", "pytest", "npm", "git", "npx"]:
         return False
         
     if executable == "python":
@@ -522,9 +522,10 @@ def _is_safe_command(cmd_args: List[str]) -> bool:
         return False
         
     if executable == "pytest":
+        pytest_flags = {"-v", "-s", "-q", "--version", "--tb=short", "--tb=line", "--no-header", "--disable-warnings", "-x", "--exitfirst", "--lf", "--last-failed", "--ff", "--failed-first", "--cache-show", "--co", "--collect-only"}
         for arg in cmd_args[1:]:
             if arg.startswith("-"):
-                if arg not in {"-v", "-s", "-q", "--version", "--tb=short", "--tb=line"}:
+                if arg not in pytest_flags:
                     return False
             else:
                 if not _is_safe_path(arg):
@@ -551,8 +552,7 @@ def _is_safe_command(cmd_args: List[str]) -> bool:
             if not _is_safe_path(prefix_dir):
                 return False
                 
-        # Filter out flags like -D, --save-dev, --save, --no-save, --legacy-peer-deps, --force
-        npm_flags = {"-D", "--save-dev", "--save", "--no-save", "--legacy-peer-deps", "--force"}
+        npm_flags = {"-D", "--save-dev", "--save", "--no-save", "--save-optional", "--no-optional", "--legacy-peer-deps", "--force", "--package-lock-only", "--no-audit", "--no-fund", "--ignore-scripts", "--silent", "--verbose", "--progress", "--yes", "--json"}
         filtered_npm_args = []
         for arg in cleaned_npm_args:
             if arg not in npm_flags:
@@ -561,23 +561,41 @@ def _is_safe_command(cmd_args: List[str]) -> bool:
         if not filtered_npm_args:
             return False
             
-        # Allow npm run lint/test/build
-        if len(filtered_npm_args) == 2 and filtered_npm_args[0] == "run" and filtered_npm_args[1] in ["lint", "test", "build"]:
+        if filtered_npm_args[0] in ["install", "ci"]:
             return True
-        # Allow npm install / npm ci
-        if len(filtered_npm_args) == 1 and filtered_npm_args[0] in ["install", "ci"]:
+        if filtered_npm_args[0] == "uninstall":
+            return len(filtered_npm_args) >= 2
+        if filtered_npm_args[0] == "update":
             return True
-        # Allow npm install <packages>
-        if len(filtered_npm_args) >= 2 and filtered_npm_args[0] == "install":
-            import re
-            for pkg in filtered_npm_args[1:]:
-                if not re.match(r"^[a-zA-Z0-9\-@_/^.]+$", pkg):
-                    return False
+        if filtered_npm_args[0] == "run":
+            if len(filtered_npm_args) >= 2:
+                import re
+                script_name = filtered_npm_args[1]
+                return bool(re.match(r"^[a-zA-Z0-9_-]+$", script_name))
+            return False
+        if filtered_npm_args[0] == "exec":
+            return True
+        if filtered_npm_args[0] == "config":
+            return True
+        if filtered_npm_args[0] in ["cache", "audit", "outdated", "ls", "search", "view", "publish", "pack", "version", "whoami", "login", "logout"]:
+            return True
+        return False
+        
+    if executable == "npx":
+        if len(cmd_args) < 2:
+            return False
+        npx_cmd = cmd_args[1]
+        if npx_cmd == "tailwindcss":
+            return True
+        if npx_cmd in ("shadcn@latest", "shadcn-ui@latest"):
+            return True
+        if npx_cmd.startswith("shadcn@"):
             return True
         return False
         
     if executable == "git":
-        if len(cmd_args) == 2 and cmd_args[1] == "diff":
+        git_commands = {"status", "diff", "log", "checkout", "branch", "add", "commit", "push", "pull", "fetch", "reset", "restore", "stash", "rebase", "merge", "remote", "tag", "show", "blame", "grep", "ls-files", "ls-tree", "rev-parse"}
+        if len(cmd_args) >= 2 and cmd_args[1] in git_commands:
             return True
         return False
         
@@ -602,6 +620,9 @@ def _prepare_command_execution(cmd_args: List[str]) -> Tuple[List[str], str]:
                 del exec_args[i:i + 2]
                 break
             i += 1
+            
+    if os.name == 'nt' and exec_args and exec_args[0] == "npx":
+        exec_args[0] = "npx.cmd"
 
     return exec_args, cwd
 
@@ -668,27 +689,94 @@ def _parse_command_errors(stdout: str, stderr: str) -> str:
     return ""
 
 
+def _build_response(status: str, message: str, data: dict = None) -> str:
+    import json
+    return json.dumps({"status": status, "message": message, "data": data})
+
+def _build_error_response(message: str, data: dict = None) -> str:
+    return _build_response("error", message, data)
+
+def _get_command_resource_limits(command: str) -> dict:
+    cmd = command.strip().lower()
+    if any(cmd.startswith(pfx) for pfx in ["npm install", "npm ci", "npm uninstall"]):
+        return {"timeout": 180.0, "memory_mb": 768, "cpu_seconds": 60.0}
+    if cmd.startswith("npm ") or cmd.startswith("npx "):
+        return {"timeout": 120.0, "memory_mb": 512, "cpu_seconds": 40.0}
+    if cmd.startswith("pytest"):
+        return {"timeout": 120.0, "memory_mb": 256, "cpu_seconds": 30.0}
+    if cmd.startswith("python"):
+        return {"timeout": 120.0, "memory_mb": 256, "cpu_seconds": 30.0}
+    if cmd.startswith("git"):
+        return {"timeout": 60.0, "memory_mb": 128, "cpu_seconds": 15.0}
+    return {"timeout": 60.0, "memory_mb": 256, "cpu_seconds": 15.0}
+
+def _terminate_process_tree(proc, p):
+    try:
+        if p:
+            for child in p.children(recursive=True):
+                try:
+                    child.kill()
+                except Exception:
+                    pass
+        proc.kill()
+    except Exception:
+        pass
+
+def _measure_memory_mb(p) -> float:
+    total_mb = 0.0
+    try:
+        mem_info = p.memory_info()
+        total_mb += mem_info.rss / (1024 * 1024)
+        for child in p.children(recursive=True):
+            try:
+                total_mb += child.memory_info().rss / (1024 * 1024)
+            except Exception:
+                pass
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+    return total_mb
+
+def _measure_cpu_time(p) -> float:
+    total_cpu = 0.0
+    try:
+        cpu_times = p.cpu_times()
+        total_cpu += cpu_times.user + cpu_times.system
+        for child in p.children(recursive=True):
+            try:
+                c_times = child.cpu_times()
+                total_cpu += c_times.user + c_times.system
+            except Exception:
+                pass
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+    return total_cpu
+
+def _safe_read_stream(stream, max_bytes=1024*1024) -> str:
+    if hasattr(stream, 'seek'):
+        try:
+            stream.seek(0)
+        except Exception:
+            pass
+    return stream.read(max_bytes)
+
 def execute_command(command: str) -> str:
     """Execute a command in the `./workspace` folder securely and return a JSON response.
     The JSON contains keys: status (ok/error), message, data (stdout, stderr, returncode).
     """
-    import json
-    def _format_response(status: str, message: str, data: dict = None) -> str:
-        return json.dumps({"status": status, "message": message, "data": data})
     cmd_clean = command.strip()
     if not cmd_clean:
-        return "Error: Empty command provided."
+        return _build_error_response("Empty command provided.")
         
     try:
-        cmd_args = shlex.split(cmd_clean)
+        cmd_args = shlex.split(cmd_clean, posix=True)
     except Exception as e:
-        return f"Error parsing command line: {e}"
+        return _build_error_response(f"Error parsing command line: {e}")
         
     if not cmd_args:
-        return "Error: Empty command provided."
+        return _build_error_response("Empty command provided.")
         
     if not _is_safe_command(cmd_args):
-        return f"Error: Command '{command}' blocked by safety policy. Command is not in allowlist."
+        return _build_error_response(f"Command '{command}' blocked by safety policy. Command is not in allowlist.")
 
     exec_args, exec_cwd = _prepare_command_execution(cmd_args)
     print(f"\n[SECURE RUN] Executing command: {exec_args} in '{exec_cwd}'")
@@ -696,13 +784,18 @@ def execute_command(command: str) -> str:
     try:
         with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stdout_file, \
              tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr_file:
-              
+            
+            kwargs = {}
+            if os.name == 'nt':
+                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            
             proc = subprocess.Popen(
                 exec_args,
                 cwd=exec_cwd,
                 stdout=stdout_file,
                 stderr=stderr_file,
-                text=True
+                text=True,
+                **kwargs
             )
             
             try:
@@ -710,78 +803,33 @@ def execute_command(command: str) -> str:
             except psutil.NoSuchProcess:
                 p = None
                 
-            timeout = 15.0
+            limits = _get_command_resource_limits(cmd_clean)
+            timeout = limits["timeout"]
+            mem_limit_mb = limits["memory_mb"]
+            cpu_limit_s = limits["cpu_seconds"]
             start_time = time.time()
             
             while proc.poll() is None:
                 elapsed = time.time() - start_time
                 if elapsed > timeout:
-                    try:
-                        if p:
-                            for child in p.children(recursive=True):
-                                try:
-                                    child.kill()
-                                except Exception:
-                                    pass
-                        proc.kill()
-                    except Exception:
-                        pass
-                    return f"Error: Command execution timed out after {timeout} seconds."
+                    _terminate_process_tree(proc, p)
+                    return _build_error_response(f"Command execution timed out after {timeout} seconds.")
                     
                 if p:
-                    try:
-                        mem_info = p.memory_info()
-                        mem_mb = mem_info.rss / (1024 * 1024)
-                        
-                        for child in p.children(recursive=True):
-                            try:
-                                mem_mb += child.memory_info().rss / (1024 * 1024)
-                            except Exception:
-                                pass
-                                
-                        if mem_mb > 100.0:
-                            try:
-                                for child in p.children(recursive=True):
-                                    try:
-                                        child.kill()
-                                    except Exception:
-                                        pass
-                                proc.kill()
-                            except Exception:
-                                pass
-                            return f"Error: Command execution exceeded memory limit of 100MB (used {mem_mb:.2f}MB)."
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                        
-                    try:
-                        cpu_times = p.cpu_times()
-                        cpu_time_used = cpu_times.user + cpu_times.system
-                        for child in p.children(recursive=True):
-                            try:
-                                c_times = child.cpu_times()
-                                cpu_time_used += c_times.user + c_times.system
-                            except Exception:
-                                pass
-                        if cpu_time_used > 5.0:
-                            try:
-                                for child in p.children(recursive=True):
-                                    try:
-                                        child.kill()
-                                    except Exception:
-                                        pass
-                                proc.kill()
-                            except Exception:
-                                pass
-                            return f"Error: Command execution exceeded CPU time limit of 5 seconds (used {cpu_time_used:.2f}s CPU time)."
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
+                    mem_mb = _measure_memory_mb(p)
+                    if mem_mb > mem_limit_mb:
+                        _terminate_process_tree(proc, p)
+                        return _build_error_response(f"Command execution exceeded memory limit of {mem_limit_mb}MB (used {mem_mb:.2f}MB).")
+                    
+                    cpu_time_used = _measure_cpu_time(p)
+                    if cpu_time_used > cpu_limit_s:
+                        _terminate_process_tree(proc, p)
+                        return _build_error_response(f"Command execution exceeded CPU time limit of {cpu_limit_s}s (used {cpu_time_used:.2f}s CPU time).")
                         
                 time.sleep(0.1)
                 
-            stdout_file.seek(0)
-            stderr_file.seek(0)
-            stdout_data = stdout_file.read()
-            stderr_data = stderr_file.read()
+            stdout_data = _safe_read_stream(stdout_file)
+            stderr_data = _safe_read_stream(stderr_file)
             
             output = []
             if stdout_data:
@@ -804,10 +852,10 @@ def execute_command(command: str) -> str:
                 "cwd": exec_cwd,
                 "parsed_errors": parsed_errors.strip()
             }
-            return _format_response("ok" if proc.returncode == 0 else "error", "Command execution completed.", response_data)
+            return _build_response("ok" if proc.returncode == 0 else "error", "Command execution completed.", response_data)
             
     except Exception as e:
-        return _format_response("error", f"Error executing command: {e}")
+        return _build_error_response(f"Error executing command: {e}")
 
 
 def run_safe_commands(command: str) -> str:
@@ -868,16 +916,25 @@ def scaffold_react_app(project_name: str) -> str:
     Creates standard directories and files, and updates parent vite.config.js.
     """
     # Clean project_name
-    project_name = "".join(c for c in project_name if c.isalnum() or c in "-_")
+    project_name = "".join(c for c in project_name if c.isalnum() or c in "-_/")
     if not project_name:
         return "Error: Invalid project name."
-        
+    
+    # Split nested paths like beezlebub/frontend into parent + leaf
+    parts = [p for p in project_name.replace("\\", "/").split("/") if p]
+    if not parts:
+        return "Error: Invalid project name."
+    leaf_name = parts[-1]
+    parent_path = "/".join(parts[:-1])
+    
     project_dir = os.path.join(WORKSPACE_ROOT, project_name)
     src_dir = os.path.join(project_dir, "src")
     
     try:
         # 1. Create directory structure
         os.makedirs(src_dir, exist_ok=True)
+        if parent_path:
+            os.makedirs(os.path.join(WORKSPACE_ROOT, parent_path), exist_ok=True)
         
         # 2. Write package.json if it doesn't exist in workspace
         pkg_path = os.path.join(WORKSPACE_ROOT, "package.json")
@@ -930,7 +987,7 @@ def scaffold_react_app(project_name: str) -> str:
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.3.4"
   }
-}""".replace("project_name_placeholder", project_name)
+}""".replace("project_name_placeholder", leaf_name)
 
         parent_pkg_path = os.path.join(WORKSPACE_ROOT, "package.json")
         if os.path.exists(parent_pkg_path):
@@ -938,7 +995,7 @@ def scaffold_react_app(project_name: str) -> str:
                 import json
                 with open(parent_pkg_path, "r", encoding="utf-8") as f:
                     p_data = json.load(f)
-                p_data["name"] = project_name
+                p_data["name"] = leaf_name
                 default_pkg_content = json.dumps(p_data, indent=2)
             except Exception as e:
                 logger.warning(f"Failed to read parent package.json: {e}")
