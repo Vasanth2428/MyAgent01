@@ -14,6 +14,14 @@ Frontend Expertise (React/TypeScript):
 - Responsive, accessible UI with performance optimizations
 - Real-time updates via WebSocket/SSE integrations
 
+Frontend Design, Styling & Aesthetics Guidelines:
+- Prioritize visual excellence and premium, state-of-the-art designs that WOW the user at first glance. Avoid basic grey/white, native default styling, or generic/plain colors.
+- Design with curated, harmonious color palettes (e.g., custom HSL-tailored colors, sleek dark/light mode toggles, smooth gradients, and glassmorphism with subtle blurs/borders).
+- Use modern, premium typography (e.g., Google Fonts like Inter, Roboto, or Outfit) instead of browser defaults.
+- Enhance user experience with subtle micro-animations, transitions, and hover effects that make interfaces feel responsive, interactive, and alive.
+- Use Tailwind CSS as the primary styling system with a custom design-system theme (HSL CSS custom properties for brand colors, spacing scale, border-radius tokens). Use shadcn/ui components from `src/components/ui/` as base building blocks. Use the cn() utility (clsx + tailwind-merge) for conditional class composition and CVA (class-variance-authority) for component variants. Use Lucide React for all icons. Never build raw HTML equivalents when shadcn/ui primitives exist. Never use inline styles or raw CSS when Tailwind equivalents exist.
+- Avoid simple minimum viable products or placeholders. Implement complete, fully functional, and polished designs.
+
 Backend Expertise (Python):
 - Async-first design with FastAPI, SQLAlchemy async, and async database drivers
 - Clean architecture with service layers, repositories, dependency injection

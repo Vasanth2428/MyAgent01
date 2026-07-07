@@ -34,6 +34,10 @@ def synthesizer_node(state: dict) -> dict:
     
     messages = state.get("messages", [])
     scratchpad = state.get("scratchpad", "")
+    scratchpad_references = state.get("scratchpad_references", [])
+    if scratchpad_references:
+        scratchpad = "\n".join(scratchpad_references)
+        
     plan = state.get("plan", [])
     worker_complete = state.get("worker_complete", {})
     

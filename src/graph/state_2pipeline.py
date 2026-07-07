@@ -30,10 +30,12 @@ def merge_dicts(left: Dict[str, any], right: Dict[str, any]) -> Dict[str, any]:
 
 def merge_created_files(left: List[str], right: List[str]) -> List[str]:
     """Reducer that merges created_files lists, deduplicating while preserving order."""
+    if left is None and right is None:
+        return []
     if left is None:
-        left = []
+        return list(right)
     if right is None:
-        right = []
+        return list(left)
     merged = list(left)
     for item in right:
         if item and item not in merged:
@@ -103,7 +105,12 @@ class AgentState(TypedDict):
     waiting_for_approval: bool
     approval_requested: Optional[str]
     approval_filepath: str
-    pending_file_approvals: Annotated[Dict[str, Dict], merge_dicts]
+    # Additional routing state
+    approval_decision: Optional[str]
+    approval_tool: Optional[str]
+    context_notes: List[str]
+    coding_worker_phase: str
+    
     # Worker output references (to prevent state bloat)
     worker_output_ids: Annotated[Dict[str, str], merge_dicts]  # worker_name -> cache_id
     worker_output_summaries: Annotated[Dict[str, str], merge_dicts]  # worker_name -> summary
@@ -128,9 +135,11 @@ class AgentState(TypedDict):
 def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False) -> dict:
     """Helper factory to construct the default AgentState dict consistently."""
     return {
+        "session_id": "",
         "messages": messages,
         "next_agent": "supervisor",
         "context_notes": [],
+        "coding_worker_phase": "PLANNING",
         "steps_remaining": 10,
         "final_answer": "",
         "plan": [],
@@ -141,8 +150,10 @@ def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False)
         "parallel_tasks": [],
         "critic_retry_count": 0,
         "waiting_for_approval": False,
+        "approval_requested": None,
         "approval_filepath": "",
         "approval_tool": "",
+        "approval_decision": "",
         "pending_file_approvals": {},
         "bypass_hitl": bypass_hitl,
         "active_document_ids": [],
@@ -160,6 +171,7 @@ def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False)
         "patch_is_verified": False,
         "active_project": None,
         "created_files": [],
-        "retry_counter": 0
+        "retry_counter": 0,
+        "context_cache_id": None
     }
 

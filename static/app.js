@@ -3003,15 +3003,40 @@ AppState.updateContextLimit(parseInt(contextLimitSlider.value));
         termSocket.onerror = (err) => {
             term.write(`\r\n[Shell Connection Error]\r\n`);
         };
-
-        term.onData((data) => {
-            if (termSocket && termSocket.readyState === WebSocket.OPEN) {
-                termSocket.send(data);
-            }
-        });
-    }
-
-    // Adjust fit on maximize
+
+        term.onData((data) => {
+
+            if (termSocket && termSocket.readyState === WebSocket.OPEN) {
+
+                termSocket.send(data);
+
+            }
+
+        });
+
+
+
+        if (typeof term.onResize === 'function') {
+
+            term.onResize((size) => {
+
+                if (termSocket && termSocket.readyState === WebSocket.OPEN) {
+
+                    termSocket.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+
+                }
+
+            });
+
+        }
+
+
+
+    }
+
+
+
+    // Adjust fit on maximize
     if (toggleTerminalBtn) {
         toggleTerminalBtn.addEventListener('click', () => {
             setTimeout(() => {

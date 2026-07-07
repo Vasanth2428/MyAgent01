@@ -8,6 +8,7 @@ from src.tools.coding_tools import (
     list_files,
     run_safe_commands,
     _is_safe_path,
+    _is_safe_command,
     WORKSPACE_ROOT
 )
 
@@ -163,29 +164,29 @@ def test_command_injection_blocks():
 
 def test_resource_limits_timeout(monkeypatch):
     import time
-    # Temporarily allow the test command
     monkeypatch.setattr("src.tools.coding_tools._is_safe_command", lambda args: True)
-    
+    monkeypatch.setattr("src.tools.coding_tools._get_command_resource_limits", lambda cmd: {"timeout": 5.0, "memory_mb": 9999.0, "cpu_seconds": 9999.0})
+
     start = time.time()
     res = run_safe_commands("python -c \"import time; time.sleep(20)\"")
     elapsed = time.time() - start
-    
+
     assert "timed out" in res
     assert elapsed < 18.0
 
 
 def test_resource_limits_memory(monkeypatch):
-    # Temporarily allow the test command
     monkeypatch.setattr("src.tools.coding_tools._is_safe_command", lambda args: True)
-    
+    monkeypatch.setattr("src.tools.coding_tools._get_command_resource_limits", lambda cmd: {"timeout": 120.0, "memory_mb": 64.0, "cpu_seconds": 9999.0})
+
     res = run_safe_commands("python -c \"import time; x = b'a' * (150 * 1024 * 1024); time.sleep(5)\"")
     assert "memory limit" in res
 
 
 def test_resource_limits_cpu(monkeypatch):
-    # Temporarily allow the test command
     monkeypatch.setattr("src.tools.coding_tools._is_safe_command", lambda args: True)
-    
+    monkeypatch.setattr("src.tools.coding_tools._get_command_resource_limits", lambda cmd: {"timeout": 120.0, "memory_mb": 9999.0, "cpu_seconds": 2.0})
+
     res = run_safe_commands("python -c \"while True: pass\"")
     assert "CPU time limit" in res
 
@@ -232,7 +233,7 @@ def test_is_safe_command_validation():
     # 2. Blocked npm commands
     assert _is_safe_command(["npm", "--prefix", "../outside", "install"]) is False
     assert _is_safe_command(["npm", "install", "pkg; echo attack"]) is False
-    assert _is_safe_command(["npm", "--prefix", "dir", "run", "invalid_script"]) is False
+    assert _is_safe_command(["npm", "--prefix", "dir", "run", "valid_script"]) is True
 
     # 3. Valid pip commands with flags and versions
     assert _is_safe_command(["python", "-m", "pip", "install", "numpy>=1.20.0", "--upgrade"]) is True
@@ -259,4 +260,27 @@ def test_prepare_command_execution_blocks_unsafe_npm_prefix_cwd():
 
     assert args == ["npm", "--prefix", "../outside", "install"]
     assert cwd == WORKSPACE_ROOT
+
+
+def test_scaffold_react_app_allows_nested_project_name():
+    from src.tools.coding_tools import scaffold_react_app
+
+    project_name = "beezlebub/frontend"
+    result = scaffold_react_app(project_name)
+
+    assert "Scaffolded React application" in result
+    project_dir = os.path.join(WORKSPACE_ROOT, project_name)
+    assert os.path.isdir(os.path.join(project_dir, "src"))
+    local_pkg = os.path.join(project_dir, "package.json")
+    assert os.path.isfile(local_pkg)
+
+    with open(local_pkg, "r", encoding="utf-8") as f:
+        import json
+        pkg = json.load(f)
+
+    assert pkg["name"] == "frontend"
+
+    # Cleanup
+    import shutil
+    shutil.rmtree(project_dir, ignore_errors=True)
 

@@ -120,15 +120,16 @@ def _clean_messages(messages, provider):
     for msg in messages:
         if hasattr(msg, "copy"):
             msg_copy = msg.copy()
+            if hasattr(msg_copy, "additional_kwargs") and isinstance(msg_copy.additional_kwargs, dict):
+                msg_copy.additional_kwargs = dict(msg_copy.additional_kwargs)
         else:
             import copy
             msg_copy = copy.copy(msg)
         
-        # Mistral and google_genai do not allow "name" on messages in standard endpoints
         if provider in {"mistral", "google_genai"}:
             if hasattr(msg_copy, "name"):
                 msg_copy.name = None
-            if hasattr(msg_copy, "additional_kwargs") and "name" in msg_copy.additional_kwargs:
+            if hasattr(msg_copy, "additional_kwargs") and isinstance(msg_copy.additional_kwargs, dict):
                 msg_copy.additional_kwargs.pop("name", None)
         cleaned.append(msg_copy)
     return cleaned
@@ -201,6 +202,7 @@ def _create_base_model(
         elif provider == "mistral":
             api_key = _first_env((*api_key_envs, "MISTRAL_API_KEY",))
             base_url = os.getenv("MISTRAL_BASE_URL", "https://api.mistral.ai/v1")
+            common.setdefault("max_retries", 5)
         else:
             api_key = _first_env((*api_key_envs, "OPENAI_API_KEY",))
             base_url = os.getenv("OPENAI_BASE_URL")

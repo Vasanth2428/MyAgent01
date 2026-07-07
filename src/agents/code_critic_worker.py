@@ -9,19 +9,17 @@ from src.core.model_provider import build_model_with_fallback, resolve_provider
 
 logger = logging.getLogger("MultiAgent.CodeCriticWorker")
 
-CRITIC_SYSTEM_PROMPT = """You are a Code Critic and Security Auditor. Your job is to validate the findings and proposed code changes from the Coding Specialist worker.
+CRITIC_SYSTEM_PROMPT = """You are a Code Critic, Security Auditor, and Runtime Validator. Your job is to validate the coding worker's outputs using static review AND execution artifacts.
 
-You must examine:
-1. Symbol references: Ensure no class, function, or method names mentioned by the worker are hallucinated. They must be validated against the actual repository symbols.
-2. Code corrections / Diff patch correctness: Check if the patch diff aligns with the code structure and does not introduce security vulnerabilities.
-3. Unsupported conclusions or logic flaws: Fact-check code reasoning and logic claims.
-4. Security audit: Review for injection vulnerabilities, hardcoded secrets, unsafe patterns, and privilege escalation risks.
+A. Static review:
+   - Symbol references, patch correctness, logic flaws, hardcoded secrets, injection risks.
 
-Check against the provided Repository Symbol List and Dependency details.
-Output a structured analysis rating the severity of any found issues (Severity levels: 'info', 'warning', 'critical').
+B. Execution verification:
+   - If the worker ran validation commands, inspect their stdout/stderr/returncode.
+   - A FAILED build/test is a CRITICAL finding.
+   - If no validation command was executed, mark that as a CRITICAL finding for verifiable tasks.
 
-If you detect a critical issue that MUST be fixed, end your response with the exact token 'RETRY_REQUIRED'.
-"""
+Output structured findings (info/warning/critical). If any critical issue remains, end with RETRY_REQUIRED."""
 
 class CriticFinding(BaseModel):
     issue_type: str = Field(description="The category of issue (e.g. 'hallucinated_symbol', 'syntax_error', 'unsupported_claim', 'patch_mismatch', 'security_risk')")
@@ -67,6 +65,10 @@ def code_critic_worker_node(state: dict) -> dict:
     current_task = state.get("current_task", "")
     worker_outputs = state.get("worker_outputs", {})
     
+    retry_count = state.get("critic_retry_count", 0)
+    if retry_count > 2:
+        retry_count = 2
+    
     # Get coding worker's output
     coding_output = worker_outputs.get("coding_worker", "")
     if not coding_output:
@@ -78,7 +80,24 @@ def code_critic_worker_node(state: dict) -> dict:
             "next_agent": "supervisor"
         }
         
-    # 2. Extract repository index symbols for validation context
+    # 2b. Collect execution/verification artifacts from scratchpad and worker outputs
+    verification_artifacts = []
+    
+    for source in [scratchpad, coding_output]:
+        if not source:
+            continue
+        for marker in ["[SECURE RUN]", "Command exited with status", "stdout", "stderr", "parsed_errors", "VERIFICATION RESULTS"]:
+            if marker in source:
+                verification_artifacts.append(source)
+                break
+    
+    verification_context = ""
+    if verification_artifacts:
+        verification_context = "\n\n=== VERIFICATION ARTIFACTS ===\n" + "\n---\n".join(verification_artifacts[-3:])
+    else:
+        verification_context = "\n\n=== VERIFICATION ARTIFACTS ===\nNo validation commands were found in the coding worker output. If the task involved creating or modifying files, this is a CRITICAL gap."
+
+    # 2c. Extract repository index symbols for validation context
     from src.agents.coding_worker import get_retrieval_service
     try:
         service = get_retrieval_service()
@@ -97,7 +116,7 @@ def code_critic_worker_node(state: dict) -> dict:
     
     critic_prompt = [
         SystemMessage(content=CRITIC_SYSTEM_PROMPT),
-        SystemMessage(content=repo_context),
+        SystemMessage(content=repo_context + verification_context),
         HumanMessage(content=f"Coding Specialist Task: {current_task}\n\nCoding Specialist Output:\n{coding_output}")
     ]
     
@@ -127,7 +146,6 @@ def code_critic_worker_node(state: dict) -> dict:
             output_lines.append("No issues detected.")
         
         is_invalid = not report.valid or any(f.severity.lower() == "critical" for f in report.findings)
-        retry_count = state.get("critic_retry_count", 0)
         
         if is_invalid:
             if retry_count < 2:
@@ -140,7 +158,6 @@ def code_critic_worker_node(state: dict) -> dict:
         logger.error(f"Error executing critic model call: {e}")
         final_text = f"Error during Code Critic model execution: {e}"
         is_invalid = False
-        retry_count = state.get("critic_retry_count", 0)
 
     logger.info("Code Critic Worker execution completed.")
     
@@ -156,11 +173,12 @@ def code_critic_worker_node(state: dict) -> dict:
         "worker_outputs": {"code_critic_worker": final_text},
         "worker_type": "code_critic_worker",
         "next_agent": "supervisor",
-        "critic_retry_count": retry_count
+        "active_project": state.get("active_project"),
+        "created_files": state.get("created_files", []),
     }
     
     if is_invalid and retry_count < 2:
-        logger.info(f"[CODE CRITIC WORKER] Critical issue detected! Forcing supervisor retry (retry {retry_count + 1}/2).")
+        logger.info(f"[CODE CRITIC WORKER] Critical issue detected! Forcing coding worker retry (retry {retry_count + 1}/2).")
         current_plan = state.get("plan", [])
 
         # Issue #2: Include specific critic findings in the retry task so the
@@ -179,6 +197,7 @@ def code_critic_worker_node(state: dict) -> dict:
         state_update["plan"] = current_plan + [f"FIX: {findings_text[:500]}"]
         state_update["current_task"] = f"CRITIC RETRY ({retry_count + 1}/2): Address these specific issues found by the code critic: {findings_text[:800]}"
         state_update["critic_retry_count"] = retry_count + 1
+        state_update["next_agent"] = "coding_worker"
     else:
         # Issue #2: Reset retry count to prevent stale state from blocking future critic cycles
         state_update["critic_retry_count"] = 0

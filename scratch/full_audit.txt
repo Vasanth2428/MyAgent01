@@ -1,0 +1,371 @@
+=== FULL DOCUMENT AUDIT ===
+Total paragraphs: 280
+Total tables: 11
+
+P[0] (Normal) [EMPTY]: 
+P[1] (Body Text) [EMPTY]: 
+P[2] (Normal): CHENNAI INSTITUTE OF TECHNOLOGY
+P[3] (Body Text): Sarathy Nagar, Kundrathur, Chennai-600069
+P[4] (Normal): An Autonomous Institute Approved by AICTE and Affiliated to Anna University, Chennai
+P[5] (Body Text) [EMPTY]: 
+P[6] (Normal): COMPUTER SCIENCE AND ENGINEERING
+P[7] (Body Text) [EMPTY]: 
+P[8] (Body Text) [EMPTY]: 
+P[9] (Body Text) [EMPTY]: 
+P[10] (Heading 2) [H:Heading 2]: COE INTERNSHIP
+P[11] (Body Text) [EMPTY]: 
+P[12] (Body Text) [EMPTY]: 
+P[13] (Normal): COE Internship Report: Design and Optimization of an Agentic RAG Context Engine & Multi-Agent Orchestration Platform
+P[14] (Body Text) [EMPTY]: 
+P[15] (Normal):   By
+P[16] (Normal): NAME
+P[17] (Normal): JUNE
+P[18] (Normal): 2026
+P[19] (Body Text) [EMPTY]: 
+P[20] (Body Text) [EMPTY]: 
+P[21] (Heading 1) [H:Heading 1]: CHENNAI INSTITUTE OF TECHNOLOGY CHENNAI-69
+P[22] (Heading 1) [EMPTY, H:Heading 1]: 
+P[23] (Normal) [EMPTY]: 
+P[24] (Body Text) [EMPTY]: 
+P[25] (Normal): Vision of the Institute:
+P[26] (Body Text) [EMPTY]: 
+P[27] (Body Text) [EMPTY]: 
+P[28] (Body Text) [EMPTY]: 
+P[29] (Normal): Mission of the Institute:
+P[30] (Body Text) [EMPTY]: 
+P[31] (Body Text) [EMPTY]: 
+P[32] (Normal): Vision of the Department:
+P[33] (Body Text) [EMPTY]: 
+P[34] (Body Text) [EMPTY]: 
+P[35] (Normal): Mission of the Department:
+P[36] (Body Text) [EMPTY]: 
+P[37] (Body Text) [EMPTY]: 
+P[38] (Heading 1) [H:Heading 1]: CHENNAI INSTITUTE OF TECHNOLOGY
+P[39] (Normal): An Autonomous Institute
+P[40] (Heading 5) [H:Heading 5]: CHENNAI-69
+P[41] (Body Text) [EMPTY]: 
+P[42] (Body Text) [EMPTY]: 
+P[43] (Heading 2) [H:Heading 2]: CERTIFICATE
+P[44] (Body Text) [EMPTY]: 
+P[45] (Normal): This is to certify that the “COE Internship Report” Submitted by NAME (Reg no: ------------) is work done by him and submitted during 2026-2027 academic year, in partial fulfilment of the requirements for the award of the degree of BACHELOR OF ENGINEERING in COMPUTER SCIENCE AND ENGINEERING, at CHENNAI INSTITUTE OF TECHNOLOGY.
+P[46] (Body Text) [EMPTY]: 
+P[47] (Normal): Submitted for the End Semester Examination for Internship held on--------------------
+P[48] (Body Text) [EMPTY]: 
+P[49] (Body Text) [EMPTY]: 
+P[50] (Body Text) [EMPTY]: 
+P[51] (Body Text) [EMPTY]: 
+P[52] (Table Paragraph) [EMPTY]: 
+P[53] (Heading 6) [H:Heading 6]: ACKNOWLEDGEMENT
+P[54] (Body Text) [EMPTY]: 
+P[55] (Normal): First, I would like to thank Chennai Institute of Technology, for giving me the opportunity to do an internship within the organization.
+P[56] (Body Text) [EMPTY]: 
+P[57] (Normal): I also would like all the people that worked along with me with their patience and openness they created an enjoyable working environment.
+P[58] (Body Text) [EMPTY]: 
+P[59] (Normal): It is indeed with a great sense of pleasure and immense sense of gratitude that I acknowledge the help of these individuals.
+P[60] (Body Text) [EMPTY]: 
+P[61] (Normal): I am highly indebted to our Chairman Shri. P. SRIRAM and Principal
+P[62] (Normal): Dr. A. RAMESH, M.E, Ph.D., for the facilities provided to accomplish this internship.
+P[63] (Body Text) [EMPTY]: 
+P[64] (Normal): I would like to thank my Head of the Department Dr. S. Pavithra M.E, Ph.D., for her constructive criticism throughout my internship.
+P[65] (Normal): I would like to thank co internship coordinator and Ms. M. Selva Jothi Year Coordinator CSE for their support and advices to get and complete internship in above said organization.
+P[66] (Body Text) [EMPTY]: 
+P[67] (Normal): I am extremely great full to my department staff members and friends who helped me in successful completion of this internship.
+P[68] (Body Text) [EMPTY]: 
+P[69] (Body Text) [EMPTY]: 
+P[70] (Normal): NAME
+P[71] (Normal): (REGISTER NO)
+P[72] (Normal) [EMPTY]: 
+P[73] (Heading 6) [H:Heading 6]: PREFACE
+P[74] (Body Text) [EMPTY]: 
+P[75] (Normal): I student of Computer Science and Engineering require to do an COE Internship to enhance my knowledge. The purpose of COE Internship is to acquaint the students with practical application of theoretical concept taught to me during my course period.
+P[76] (Body Text) [EMPTY]: 
+P[77] (Normal): It was a great opportunity to have close comparison of theoretical concept in practical field. This report may depict deficiencies on my part but still it is an account of my effort.
+P[78] (Body Text) [EMPTY]: 
+P[79] (Normal): The output of my analysis is summarized in a shape of Internship the content of report shows the details of sequence of these. This is my COE Internship report which I have prepared for the sake of my Second year Internship. Being an engineer, I should help the society for inventing something new by utilizing my knowledge which can help them to solve their problem.
+P[80] (Normal) [EMPTY]: 
+P[81] (Heading 6) [H:Heading 6]: ABSTRACT
+P[82] (Body Text) [EMPTY]: 
+P[83] (Normal): This report presents the design, optimization, and evaluation of a production-grade modular Retrieval-Augmented Generation (RAG) Context Engine and multi-agent orchestration platform developed during the COE internship. In building agentic coding workflows, conventional retrieval architectures suffer from context window exhaustion, high API latency, and expensive token overhead. To address these challenges, we implemented a multi-agent system utilizing a LangGraph-based supervisor routing pattern, coordinating specialized worker agents for RAG search, web scraping, execution, and coding. To maximize token efficiency, we developed surgical context reduction tools, including AST-based symbol header extraction and target-specific diff modifications (apply_surgical_edit). Empirical benchmarks showed that surgical code edits achieved 99.55% output token savings, and structural header lookups reduced context overhead by 99.79% (saving 7,123 tokens per file read). Additionally, Weaviate vector indexing with local fallbacks, query-hash semantic caching, and dynamic hybrid alpha retrieval (shifting from 0.75 semantic to 0.25 keyword weights for code queries) were integrated to maintain search relevance. The results demonstrate that surgical context compression significantly lowers inference latency and API spend, presenting a highly scalable model for autonomous software development.
+P[84] (Normal) [EMPTY]: 
+P[85] (Body Text) [EMPTY]: 
+P[86] (Body Text) [EMPTY]: 
+P[87] (Body Text) [EMPTY]: 
+P[88] (Body Text) [EMPTY]: 
+P[89] (Table Paragraph) [EMPTY]: 
+P[90] (Heading 6) [H:Heading 6]: WEEKLY OVERVIEW OF INTERNSHIP ACTIVITIES
+P[91] (Body Text) [EMPTY]: 
+P[92] (Body Text) [EMPTY]: 
+P[93] (Body Text) [EMPTY]: 
+P[94] (Table Paragraph) [EMPTY]: 
+P[95] (Heading 3) [H:Heading 3]: Design and Optimization of an Agentic RAG Context Engine & Multi-Agent Orchestration Platform
+P[96] (Body Text) [EMPTY]: 
+P[97] (Heading 7) [H:Heading 7]: Abstract
+P[98] (Body Text): The rapid evolution of Large Language Models (LLMs) has enabled autonomous agentic software workflows. However, deploying these agents in real-world environments is constrained by high API execution costs and context window boundaries. This study designs a modular, supervisor-directed RAG framework that isolates agent concerns into a collaborative state graph using LangGraph. We introduce surgical context reduction tools, dynamic hybrid retrieval, and semantic query caching to optimize token load. Our benchmarks demonstrate a 99.79% reduction in context overhead for dependency scanning, and a 99.55% reduction in generation volume for code modifications, showing that token-optimized context engineering is critical for scaling autonomous agentic pipelines.
+P[99] (Heading 7) [H:Heading 7]: Introduction
+P[100] (Body Text): In recent years, the intersection of software engineering and Artificial Intelligence has shifted toward autonomous agentic workflows. Modern platforms require the ability to analyze code bases, retrieve relevant documentation, write source files, and execute compilation steps. Standard implementations feed large blocks of documentation and file systems directly into LLMs, leading to exceeded context limits, elevated API latency, and high cost. Context engineering is the field that seeks to optimize how information is selected and formatted for the LLM context window.
+P[101] (Body Text): This internship focuses on designing a Modular RAG Context Engine and Multi-Agent Orchestration system using LangGraph and Weaviate. The core architecture uses a supervisor model that breaks down high-level user goals into specific worker tasks, coordinating a team of specialized agents. We integrate a Weaviate vector database to index user manuals, technical documents, and codebase files, providing grounded context to the generation loop.
+P[102] (Body Text) [EMPTY]: 
+P[103] (Body Text): To achieve cost-efficiency and performance scalability, we implemented three key optimizations: AST-based function/signature retrieval, surgical diff-based edits, and dynamic hybrid search alpha scaling. We benchmarked the platform on typical software development cycles, evaluating token savings, response times, and diagnostic resolutions during live runs.
+P[104] (Body Text): Context bloating in agentic loops is a critical performance bottleneck. When the full contents of large files, verbose logs, and irrelevant code are injected into the LLM context window, the model loses focus on the target lines, produces lower-quality outputs, and incurs unnecessary API costs. By applying semantic compression filters and log output truncators, the system retains only the critical messages, preserving generation accuracy while significantly lowering token consumption.
+P[105] (Body Text): Conventional agent architectures generate full-file rewrites even for single-line adjustments. This is computationally expensive and increases latency. By adopting a surgical diff-based editing tool (`apply_surgical_edit`), we target only the modified functions, bypassing the need to regenerate unaltered boilerplate code.
+P[106] (Body Text): Weaviate provides a highly scalable database interface for indexing text data. By storing text and code snippets as vector fingerprints, the retriever can conduct hybrid queries (combining lexical BM25 and semantic distance). A local fallback database ensures that if network failures occur, keyword-based matching is used, preventing workflow failures.
+P[107] (Body Text): Although LLMs possess extensive general knowledge, they lack context regarding private APIs and local environments. Grounding responses in local document context is critical to prevent hallucinations. This report details our implementation, benchmark results, and diagnostic resolutions.
+P[108] (Body Text) [EMPTY]: 
+P[109] (Body Text): While standard RAG engines perform flat text indexing, code files possess hierarchical structures (modules, classes, functions). Resolving these structures using abstract syntax trees (AST) allows the system to retrieve only relevant code signatures rather than full implementations, drastically reducing overhead.
+P[110] (Body Text): Therefore, the present study implements a token-optimized context engine and multi-agent developer system. We evaluate its performance in in-vitro scenarios (controlled codebase editing) and in-silico simulations (full-stack website scaffolding), establishing a blueprint for optimized software agents.
+P[111] (Heading 7) [H:Heading 7]: Materials and Methods
+P[112] (Body Text): The methodology section explains the software architecture, agent definitions, and optimization tools implemented for the Modular RAG Context Engine and Multi-Agent Orchestration Platform. All modules were developed in Python and coordinated via LangGraph state charts.
+P[113] (Heading 7) [H:Heading 7]: System Architecture & Agent Roles
+P[114] (Normal) [EMPTY]: 
+P[115] (Normal): Figure 1. Multi-Agent System Architecture with Supervisor Routing Pattern
+P[116] (Body Text): The multi-agent system uses a Supervisor routing pattern. The Supervisor agent reads the user query and routes tasks to worker agents. The workers include the RAG Worker (document search), Web Worker (live search), Coding Worker (writes code files), and Critic Worker (runs tests and checks safety).
+P[117] (Body Text): The Weaviate vector database stores all document and codebase vectors. The database is initialized with a RAGKnowledge schema. A local JSON fallback database (`local_docs.json`) is maintained to allow degraded retrieval when Weaviate Cloud is offline.
+P[118] (Body Text) [EMPTY]: 
+P[119] (Body Text): Table 1 outlines the primary worker agent roles and model assignments within the LangGraph orchestrator.
+P[120] (Normal): Table 1. — Agent Roles and Model Configurations in the Orchestration Graph
+P[121] (Body Text) [EMPTY]: 
+P[122] (Body Text) [EMPTY]: 
+P[123] (Heading 7) [H:Heading 7]: Weaviate Vector Storage and Embedded Vectorizer Setup
+P[124] (Body Text): The Weaviate retriever connects to Weaviate Cloud using HuggingFace server-side vectorization. We configured the 'RAGKnowledge' collection with properties for text, source metadata, and upload timestamps. Deterministic UUIDs are generated for each chunk to prevent duplicate indexing of the same content.
+P[125] (Body Text): A sibling collection, 'RAGCode', was created to store codebase snippets. Python code files are parsed into semantic chunks with metadata for filepath, start line, end line, symbol name, and symbol type, enabling targeted symbol-based searches.
+P[126] (Body Text): When offline, Weaviate connections fail gracefully. The retriever falls back to keyword-based matching using a local persistent database. The local database loads chunks from `local_docs.json` on startup and processes query keywords to return relevant documents.
+P[127] (Body Text) [EMPTY]: 
+P[128] (Heading 7) [H:Heading 7]: Dynamic Hybrid Retrieval (Alpha Shifts)
+P[129] (Body Text): To query documentation and code files effectively, we implemented a Dynamic Hybrid Retrieval system. The system automatically inspects the user's query. If it contains technical keywords (e.g. `import`, `def`, `class`, `error`) or programming brackets, the hybrid query alpha shifts to 0.25 (lexical search). Otherwise, it defaults to 0.75 (semantic vector search).
+P[130] (Heading 7) [H:Heading 7]: Neural Reranking and Semantic Caching
+P[131] (Body Text): To prioritize the most relevant documents, search outputs are passed through a local FlashRank reranker using the `ms-marco-MiniLM-L-6-v2` model. In addition, an in-memory LRU cache layer was added. Queries are hashed using SHA-256; cache hits bypass the database entirely, reducing retrieval latency to 0ms.
+P[132] (Normal): Context Compression and Output Truncation
+P[133] (Body Text): To prevent context window bloating, we developed a semantic context compressor. The compressor evaluates retrieved text chunks and extracts only the sentences containing the query keywords within a strict token budget. Furthermore, verbose console outputs and logs are truncated, retaining only the start and end errors.
+P[134] (Body Text) [EMPTY]: 
+P[135] (Body Text): Upon compilation, the truncation tool filters log output, reducing tokens by 88.3%. This prevents the LLM context from being flooded with verbose build logs during debugging cycles.
+P[136] (Body Text): The context compressor reduces retrieved document sizes by 20% to 58.3%, ensuring that only the most relevant passages are passed to the generator.
+P[137] (Heading 7) [H:Heading 7]: Human-In-The-Loop (HITL) and Safety Guardrails
+P[138] (Body Text): For security, the system integrates a Human-in-the-Loop check gate. When the coding worker attempts to modify files, the graph execution pauses. A diff of the changes is presented to the user. Once the user approves the edit, the tool executes and resumes graph execution.
+P[139] (Body Text) [EMPTY]: 
+P[140] (Body Text) [EMPTY]: 
+P[141] (Body Text): Path safety checks are performed on every file write:
+P[142] (Body Text): _is_safe_path(filepath) == True
+P[143] (Body Text) [EMPTY]: 
+P[144] (Body Text): This function ensures that file modifications are restricted to the configured workspace root directory, preventing directory traversal attacks.
+P[145] (Body Text): If the target path falls outside the workspace root, the guardrail rejects the modification, throwing a safety error and prompting the supervisor to re-route.
+P[146] (Body Text): To evaluate the efficiency of the coding and retrieval tools, we benchmarked the platform on a representative development task using the codebase file `src/tools/coding_tools.py` (7,138 tokens).
+P[147] (Body Text) [EMPTY]: 
+P[148] (Body Text): All benchmark results were analyzed using token counting utilities and latency profiling to determine the effectiveness of each optimization tool.
+P[149] (Heading 7) [H:Heading 7]: Vite Scaffolding and Codebase Modifiers
+P[150] (Body Text): The selection of agent configurations was based on the required roles and LLM capacities. The Supervisor and Web Searcher agents use gpt-4o-mini to minimize costs, while the Coding Worker uses gemini-2.5-flash to support complex, multi-file surgical editing.
+P[151] (Heading 7) [H:Heading 7]: State Hashing and Cache Hashing
+P[152] (Body Text): The agent parameters were retrieved from config/.env to initialize the LangGraph workspace. The state saver checkpointing enables persistence, allowing the agentic pipeline to resume seamlessly after completing user approval check gates.
+P[153] (Heading 7) [H:Heading 7]: LLM Provider and Key Resolver Integration
+P[154] (Body Text): We configured the system to resolve API keys dynamically based on the active provider (Groq vs Google GenAI). This was integrated using a unified model builder fallback constructor.
+P[155] (Body Text) [EMPTY]: 
+P[156] (Body Text): The system components represent the core libraries and tools involved in the context engine. These include the weaviate-client for vector search, flashrank for cross-encoder reranking, and langgraph for supervisor state coordination.
+P[157] (Heading 7) [H:Heading 7]: Table 2. Details of System Components and Libraries Used
+P[158] (Body Text) [EMPTY]: 
+P[159] (Body Text) [EMPTY]: 
+P[160] (Heading 7) [H:Heading 7]: Results and Performance Benchmarks
+P[161] (Body Text): We evaluated our optimization tools on context retrieval and code generation tasks. The results showed significant token reductions and latency improvements across all benchmarks.
+P[162] (Body Text): These observations support the effectiveness of surgical context engineering in multi-agent loops.
+P[163] (Heading 7) [H:Heading 7]: Context Compression and Output Truncation Benchmarks
+P[164] (Body Text): The token savings achieved by the surgical retrieval and compression tools are presented in Table 6.
+P[165] (Normal): Table 6. Token Savings achieved via Context Compression & Truncation
+P[166] (Body Text) [EMPTY]: 
+P[167] (Heading 7) [EMPTY, H:Heading 7]: 
+P[168] (Heading 7) [EMPTY, H:Heading 7]: 
+P[169] (Heading 7) [EMPTY, H:Heading 7]: 
+P[170] (Heading 7) [H:Heading 7]: For file reads under 500 tokens, the overhead of AST parsing is negligible and direct full-file reads remain acceptable.
+P[171] (Body Text): For files between 500 and 5,000 tokens, function-specific isolation via get_pruned_context provides the optimal balance of context and cost.
+P[172] (List Paragraph): For files exceeding 5,000 tokens, surgical header extraction (fetch_file_headers) is essential to prevent context window exhaustion.
+P[173] (List Paragraph): For files between 500 and 5,000 tokens, function-specific isolation via get_pruned_context provides the optimal balance of context and cost.
+P[174] (List Paragraph): For files exceeding 5,000 tokens, surgical header extraction (fetch_file_headers) is essential to prevent context window exhaustion.
+P[175] (Normal) [EMPTY]: 
+P[176] (Heading 7) [H:Heading 7]: Figure 4. Token load comparison between conventional read/write and optimized surgical coding pipelines.
+P[177] (Body Text) [EMPTY]: 
+P[178] (Normal): Tool Output Summarization Metrics
+P[179] (Body Text): In testing verbose terminal stdout and grep logs, the output truncation tool achieved an 88.3% token reduction, shrinking logs from 1,800 tokens to just 211 tokens while preserving error warnings.
+P[180] (Body Text) [EMPTY]: 
+P[181] (Normal) [EMPTY]: 
+P[182] (Heading 7) [H:Heading 7]: Figure 5. Memory usage and query latency profiles of the local hybrid vector search and semantic cache.
+P[183] (Body Text) [EMPTY]: 
+P[184] (Normal): Token Optimization & Scaffolding Simulation Results
+P[185] (Body Text) [EMPTY]: 
+P[186] (Body Text): During the full-stack scaffolding benchmark, the cumulative load of the optimized pipeline was only 115 tokens compared to 2,210 tokens for a traditional rewrite pipeline, achieving 94.8% token savings.
+P[187] (Body Text) [EMPTY]: 
+P[188] (Body Text): Scaffolding Load: 115 tokens
+P[189] (Body Text) [EMPTY]: 
+P[190] (Body Text): This represents a massive decrease in input token load, allowing the agent to run multiple iterative debugging cycles without hitting API rate limits.
+P[191] (Body Text) [EMPTY]: 
+P[192] (Heading 7) [H:Heading 7]: Summary of Performance Savings
+P[193] (Body Text) [EMPTY]: 
+P[194] (Body Text): Overall, the results clearly demonstrate that the Modular RAG Context Engine exhibits significant token savings across all core development operations. Both quantitative metrics and live tests confirm:
+P[195] (Body Text): The comparative token saving metrics demonstrate that surgical context engineering (such as fetch_file_headers and apply_surgical_edit) drastically reduces input and output sizes, enabling fast execution and low API costs.
+P[196] (Body Text) [EMPTY]: 
+P[197] (List Paragraph): 1. Imports and signatures lookup saves 99.79% of context tokens.
+P[198] (List Paragraph): 2. Specific function isolation saves 88.68% of context tokens.
+P[199] (List Paragraph): 3. Surgical code edits save 99.55% of generation tokens.
+P[200] (List Paragraph): 4. Verbose command log truncation saves 88.30% of context tokens.
+P[201] (Body Text): These findings validate the surgical context approach for developer agents.
+P[202] (Body Text) [EMPTY]: 
+P[203] (Body Text): The diagnostics and debugging analysis performed during live runs generated comprehensive insights into agent behaviors, caching logic, and key safety resolutions.
+P[204] (Normal): System Issue Resolutions and Fixes
+P[205] (Body Text): We resolved three critical system issues: LLM provider API key cross-contamination (401 Auth error), directory safety guardrails blocking sibling directories, and unhashable list types in caching.
+P[206] (Body Text): These results strongly support the conclusion that token-optimized context engineering is essential for running software developer agents in production. Without surgical optimizations, agents quickly exhaust their context windows and trigger API rate limit failures, making iterative development infeasible.
+P[207] (Heading 7) [H:Heading 7]: Table 4. Resolutions of Live Diagnostics and System Fixes
+P[208] (Body Text) [EMPTY]: 
+P[209] (Body Text) [EMPTY]: 
+P[210] (Normal) [EMPTY]: 
+P[211] (Normal): Figure 5. (Heatmap): Heatmap of system latency across different worker agents and model parameters.
+P[212] (Heading 7) [H:Heading 7]: Analysis of Human-In-The-Loop (HITL) Workflow
+P[213] (Body Text): The human-in-the-loop workflow ensures safety by prompting the user with a Git-like diff before applying modifications. The user can review, approve, or reject changes via a web UI.
+P[214] (Body Text): These results strongly support the conclusion that token-optimized context engineering is essential for running software developer agents in production. Without surgical optimizations, agents quickly exhaust their context windows and trigger API rate limit failures, making iterative development infeasible.
+P[215] (Body Text): The Supervisor agent routes queries by matching user intents to specialized tools. When a coding query is detected, the workflow branches to the Coding Worker to write or modify workspace files.
+P[216] (Body Text): The Coding Worker's execution is guided by strict coding prompts, enabling the agent to output search-and-replace target blocks rather than rewriting the entire source file.
+P[217] (Body Text): The Critic Worker validates the modified code by checking syntax correctness and running unit tests, routing errors back to the Coding Worker if modifications fail.
+P[218] (Body Text): The Web Searcher agent fetches live data via Tavily and parses URL contents to resolve documentation references, providing external knowledge to the RAG loop.
+P[219] (Body Text): The Utility Worker handles calculations and summarizes session histories, enabling the Supervisor to maintain a compact state context across multiple turns.
+P[220] (Body Text): Table 7 summarizes the key metrics and parameters of the pipeline configurations.
+P[221] (Heading 7) [H:Heading 7]: Table 7. Primary Pipeline Configuration Parameters
+P[222] (Body Text) [EMPTY]: 
+P[223] (Table Paragraph) [EMPTY]: 
+P[224] (Body Text) [EMPTY]: 
+P[225] (Table Paragraph) [EMPTY]: 
+P[226] (Body Text): Notes: parameters are defined in the `config/.env` file and parsed dynamically on startup.
+P[227] (Body Text) [EMPTY]: 
+P[228] (Normal) [EMPTY]: 
+P[229] (Heading 7) [H:Heading 7]: Figure 6. Diagram of agent coordination state changes in LangGraph.
+P[230] (Body Text) [EMPTY]: 
+P[231] (Normal): Evaluation of Modern Web App Styling Rules
+P[232] (Body Text): To ensure generated frontends look professional, we integrated strict styling guidelines into the coding worker prompts, replacing basic HTML text fields with interactive HSL-styled components.
+P[233] (Body Text): Styling guidelines enforce Inter/Outfit typography, linear gradients, transitions, and cards.
+P[234] (Body Text): The Coding Worker successfully applies these guidelines, generating premium web interfaces.
+P[235] (Body Text) [EMPTY]: 
+P[236] (Body Text): The generated applications are styled using modern design tokens, implementing Outfit/Inter typography, linear gradients, card layouts, and responsive grids.
+P[237] (Body Text): This prevents the model from generating raw placeholder templates and ensures final completeness.
+P[238] (Body Text) [EMPTY]: 
+P[239] (Normal) [EMPTY]: 
+P[240] (Normal): Figure 7. Flowchart of state transitions during developer agent runs.
+P[241] (Normal) [EMPTY]: 
+P[242] (Heading 7) [H:Heading 7]: Evaluation of Supervisor Routing Logic
+P[243] (Body Text) [EMPTY]: 
+P[244] (Body Text): The supervisor agent successfully routes queries based on task description, dispatching queries to specialized workers and maintaining state history.
+P[245] (Body Text) [EMPTY]: 
+P[246] (List Paragraph): 1. Routing accuracy to specialized workers is 100% on standard tasks.
+P[247] (List Paragraph): 2. Critic feedback loop catches syntax errors and redirects to coding workers.
+P[248] (List Paragraph): 3. Human-in-the-loop check gates pause execution for file safety verification.
+P[249] (Body Text): This multi-agent coordination workflow demonstrates that isolating developer tasks into collaborative nodes significantly improves code quality and execution safety.
+P[250] (Heading 7) [H:Heading 7]: This ensures the agent runs safely without corruption of workspace files.
+P[251] (Body Text): The benchmark results illustrate the efficiency of surgical tools, comparing token consumption and execution latency between optimized and traditional pipelines.
+P[252] (Body Text): System Performance Diagnostics
+P[253] (Normal) [EMPTY]: 
+P[254] (Body Text) [EMPTY]: 
+P[255] (Body Text) [EMPTY]: 
+P[256] (Normal) [EMPTY]: 
+P[257] (Heading 7) [H:Heading 7]: System Reliability and Safety Analysis
+P[258] (Body Text) [EMPTY]: 
+P[259] (Normal): System performance diagnostics were conducted during live API runs to identify and resolve integration issues. Three critical bugs were discovered and fixed: LLM provider API key cross-contamination causing 401 errors, directory safety guardrails rejecting legitimate sibling project folders, and a TypeError crash in the output caching layer caused by unhashable list types. Each fix was verified through end-to-end integration tests.
+P[260] (Body Text): The findings suggest that context engineering is as important as model capacity for developer agents. Surgical edits not only save API spend but also decrease user waiting times from 30s to under 1s. We recommend utilizing AST-based signatures by default for dependency analyses.
+P[261] (Body Text) [EMPTY]: 
+P[262] (Body Text): The live debugging process validated the robustness of the platform by resolving provider key contamination (401 Authentication errors), extending directory safety guardrails for multi-repo workspaces, and fixing cache hashing crashes caused by unhashable list return types.
+P[263] (Body Text) [EMPTY]: 
+P[264] (Heading 7) [H:Heading 7]: Conclusion and Future Scope
+P[265] (Body Text): In conclusion, the Modular RAG Context Engine and Multi-Agent Orchestration Platform successfully solves context bloat in agentic software development, achieving up to 99.79% token savings. Future work will implement knowledge graph traversing for multi-hop reasoning.
+P[266] (Body Text): Discussion
+P[267] (Body Text) [EMPTY]: 
+P[268] (Heading 4) [H:Heading 4]: PO & PSO Attainment
+P[269] (Body Text): The live debugging process validated the robustness of the platform by resolving provider key contamination (401 Authentication errors), extending directory safety guardrails for multi-repo workspaces, and fixing cache hashing crashes caused by unhashable list return types.
+P[270] (Body Text) [EMPTY]: 
+P[271] (Body Text) [EMPTY]: 
+P[272] (Table Paragraph) [EMPTY]: 
+P[273] (Body Text) [EMPTY]: 
+P[274] (Body Text) [EMPTY]: 
+P[275] (Body Text) [EMPTY]: 
+P[276] (Body Text) [EMPTY]: 
+P[277] (Table Paragraph) [EMPTY]: 
+P[278] (Heading 3) [H:Heading 3]: INTERNSHIP COMPLETION CERTIFICATE
+P[279] (Body Text) [EMPTY]: 
+
+
+=== TABLES ===
+
+--- Table 1: 1r x 2c ---
+  R0: ['Dr.S.Pavithra M.E, ph.D., Head of the Department    Department Internship Coordi', 'Internal Examiner Date:    External Examiner Date:']
+
+--- Table 2: 11r x 3c ---
+  R0: ['', 'CONTENT', '']
+  R1: ['Chapter No', 'Title', 'Page No.']
+  R2: ['1.', 'Weekly Overview of Internship Activities', '09']
+  R3: ['2.', 'Introduction', '10']
+  R4: ['3.', 'System Architecture & Agent Design', '11']
+  R5: ['4.', 'Methodology: Retrieval, Caching & Optimization Tools', '12']
+  R6: ['5.', 'Results & Performance Benchmarks', '20']
+  R7: ['6.', 'Diagnostics, Discussion & Analysis', '29']
+  R8: ['7.', 'Conclusion and Future Scope', '30']
+  R9: ['8.', 'PO & PSO Attainment', '31']
+  R10: ['9.', 'Internship Completion Certificate', '33']
+
+--- Table 3: 5r x 2c ---
+  R0: ['Week', 'Work done']
+  R1: ['Week - 1', 'Acquainted with the workspace and codebase. Set up Weaviate Cloud instance and c']
+  R2: ['Week - 2', 'Implemented the multi-agent orchestration architecture using LangGraph. Configur']
+  R3: ['Week - 3', 'Developed and benchmarked context optimization tools: dynamic hybrid retrieval (']
+  R4: ['Week - 4', 'Debugged critical system-level issues: resolved LLM provider authentication cros']
+
+--- Table 4: 7r x 4c ---
+  R0: ['Agent Node Name', 'Model Assigned', 'Tools Available', 'Default Context Budget']
+  R1: ['Supervisor', 'gpt-4o-mini', 'Route Tool, Synthesizer', '4,000 tokens']
+  R2: ['RAG Worker', 'gpt-4o-mini', 'Weaviate Query, Local DB Search', '8,000 tokens']
+  R3: ['Coding Worker', 'gemini-2.5-flash', 'read_file, modify_files, run_cmd', '16,000 tokens']
+  R4: ['Critic Worker', 'gpt-4o-mini', 'validate_code, run_tests', '12,000 tokens']
+  R5: ['Web Searcher', 'gpt-4o-mini', 'Tavily Search, fetch_url', '6,000 tokens']
+  R6: ['Utility Agent', 'gpt-4o-mini', 'calculator, format_text', '4,000 tokens']
+
+--- Table 5: 5r x 7c ---
+  R0: ['System Component', 'Default Model', 'State/Memory', 'State/Memory', 'Benefit', 'Benefit', 'Benefit']
+  R1: ['Weaviate DB', 'sentence-transformers', 'weaviate-client', 'Local Fallback', 'Stores vector fingerprints of text', 'Stores text and code', 'Server-side vectorization']
+  R2: ['Supervisor', 'gpt-4o-mini', 'SqliteSaver', 'SqliteSaver', 'Conditional state routing', 'Conditional state routing', 'Conditional state routing']
+  R3: ['Reranker', 'cross-encoder', 'flashrank', 'None', 'Filters irrelevant context', 'Filters irrelevant context', 'Filters irrelevant context']
+  R4: ['Coding Worker', 'gemini-2.5-flash', 'Approval Store', 'Approval Store', 'Saves 99.55% generation tokens', 'Saves 99.55% generation tokens', 'Saves 99.55% generation tokens']
+
+--- Table 6: 7r x 2c ---
+  R0: ['Optimization Scenario', 'Token Savings achieved (%)']
+  R1: ['Imports & Signatures Lookup (fetch_file_headers)', '99.79%']
+  R2: ['Function-Specific Isolation (get_pruned_context)', '88.68%']
+  R3: ['Surgical Code Edits (apply_surgical_edit)', '99.55%']
+  R4: ['Log Output Truncation (summarize_output)', '88.30%']
+  R5: ['Full Site Scaffolding Cumulative Load', '94.80%']
+  R6: ['Context Compression (Token Budgeting)', '20.0% to 58.3%']
+
+--- Table 7: 6r x 5c ---
+  R0: ['Optimization Scenario', 'Conventional Size', 'Optimized Size', 'Token Savings (%)', 'Key Advantage']
+  R1: ['Imports & Signatures Lookup', '7,138 tokens', '15 tokens', '99.79%', 'Excludes implementation noise']
+  R2: ['Function-Specific Isolation', '7,138 tokens', '808 tokens', '88.68%', 'Isolates target code blocks']
+  R3: ['Surgical Code Edits', '7,138 tokens', '32 tokens', '99.55%', 'Avoids rewriting full files']
+  R4: ['Log Output Truncation', '1,800 tokens', '211 tokens', '88.30%', 'Retains critical compile errors']
+  R5: ['Full Site Scaffolding', '2,210 tokens', '115 tokens', '94.80%', 'Orchestrator-driven scaffolding']
+
+--- Table 8: 3r x 5c ---
+  R0: ['Parameter', 'Default Value', 'Config Env Variable', 'Description', 'Relevance']
+  R1: ['CHUNK_SIZE', '1000', 'RAG_CHUNK_SIZE', 'Size of semantic text chunks', 'Splitting accuracy']
+  R2: ['HYBRID_ALPHA', '0.75', 'HYBRID_ALPHA_DEFAULT', 'Semantic vs lexical weight', 'Relevance tuning']
+
+--- Table 9: 11r x 4c ---
+  R0: ['PO .No', 'Graduate Attribute', 'Attained', 'Justification']
+  R1: ['PO1', 'Engineering knowledge', 'Yes', 'Applied engineering principles of modular software design, state machines, and v']
+  R2: ['PO2', 'Problem analysis', 'Yes', 'Analyzed context window limitations, API cost structures, and token optimization']
+  R3: ['PO3', 'Design/Development of solutions', 'Yes', 'A complete agentic software solution was successfully developed incorporating su']
+  R4: ['PO4', 'Conduct investigations of complex problems', 'Yes', 'Investigations were conducted on context compression, token budgets, and LLM key']
+  R5: ['PO5', 'Modern Tool usage', 'Yes', 'Implemented using modern software development tools (LangGraph, FastAPI, and Wea']
+  R6: ['PO6', 'The Engineer and society', 'Yes', 'The platform enables developers to build software faster, reducing time-to-marke']
+  R7: ['PO7', 'Environment and Sustainability', 'Yes', 'The solution optimizes cloud compute resources and reduces carbon footprint by m']
+  R8: ['PO8', 'Ethics', 'Yes', 'Ensured ethical AI practices including human-in-the-loop approval gates and path']
+  R9: ['PO9', 'Individual and team work', 'Yes', 'Individually developed the RAG engine, agent configurations, and benchmark scrip']
+  R10: ['PO10', 'Communication', 'Yes', 'Produced clear technical documentation, benchmark reports, and a web-based chat ']
+
+--- Table 10: 3r x 4c ---
+  R0: ['PO. No', 'Graduate Attribute', 'Attained', 'Justification']
+  R1: ['PO11', 'Project management and finance', 'Yes', 'Managed the project timeline across 4 weeks, balancing research, development, be']
+  R2: ['PO12', 'Life- long learning', 'Yes', 'Gained proficiency in LangGraph, Weaviate, FastAPI, and context engineering — sk']
+
+--- Table 11: 3r x 4c ---
+  R0: ['PSO .No', 'Graduate Attribute', 'Attained', 'Justification']
+  R1: ['PSO1', 'To analyze, design and develop solutions by applying the concepts of Robotics fo', 'No', 'Application of concepts of Robotics is not applicable; instead, advanced NLP and']
+  R2: ['PSO2', 'To create innovative ideas and solutions for real time problems in Manufacturing', 'No', 'Manufacturing automation was not applicable; instead, software engineering and d']

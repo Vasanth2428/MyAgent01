@@ -974,26 +974,166 @@ async def git_sync():
 
 @app.websocket("/terminal")
 async def terminal_endpoint(websocket: WebSocket):
-    """Establishes an interactive shell terminal subprocess via WebSocket."""
-    # Origin validation for Cross-Site WebSocket Hijacking (CSWSH) protection
+    """Establishes an interactive shell terminal subprocess via WebSocket.
+    Uses PTY on Unix for proper line editing (backspace, history, etc.).
+    Windows uses enhanced pipe mode due to lack of native PTY support."""
     origin = websocket.headers.get("origin")
     host = websocket.headers.get("host")
     if origin and host:
         from urllib.parse import urlparse
         parsed_origin = urlparse(origin)
         if parsed_origin.netloc != host:
-            # Reject connection with policy violation
             await websocket.close(code=1008)
             return
-            
+
     await websocket.accept()
-    
-    # Spawn powershell on Windows, bash on Posix
-    shell = "powershell.exe" if sys.platform == "win32" else "bash"
-    args = ["-NoLogo"] if sys.platform == "win32" else []
-    
+
     try:
-        creationflags = 0x08000000 if sys.platform == "win32" else 0
+        if sys.platform == "win32":
+            await _run_windows_terminal(websocket)
+        else:
+            await _run_unix_terminal(websocket)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_text(f"\r\n[Terminal Error] {str(e)}\r\n")
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+async def _run_unix_terminal(websocket: WebSocket):
+    """Run terminal with PTY on Unix for proper terminal behavior."""
+    import pty
+    import fcntl
+    import termios
+    import struct
+
+    shell = os.environ.get("SHELL", "/bin/bash")
+
+    master_fd, slave_fd = pty.openpty()
+
+    try:
+        try:
+            winsize = struct.pack("HHHH", 24, 80, 0, 0)
+            fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, winsize)
+        except Exception:
+            pass
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                shell,
+                "-i",
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                close_fds=True,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to start shell: {e}") from e
+        finally:
+            os.close(slave_fd)
+            slave_fd = -1
+
+        loop = asyncio.get_event_loop()
+
+        def _forward_master_to_ws():
+            try:
+                data = os.read(master_fd, 4096)
+                if data:
+                    asyncio.ensure_future(
+                        websocket.send_text(data.decode("utf-8", errors="replace"))
+                    )
+            except (OSError, ValueError):
+                pass
+            except Exception:
+                pass
+
+        try:
+            flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+            fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        except Exception:
+            pass
+
+        loop.add_reader(master_fd, _forward_master_to_ws)
+
+        async def ws_reader():
+            try:
+                while True:
+                    message = await websocket.receive_text()
+
+                    try:
+                        resize_data = json.loads(message)
+                        if resize_data.get("type") == "resize":
+                            try:
+                                cols = int(resize_data.get("cols", 80))
+                                rows = int(resize_data.get("rows", 24))
+                                winsize = struct.pack("HHHH", rows, cols, 0, 0)
+                                fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
+                            except Exception:
+                                pass
+                            continue
+                    except ( ValueError, TypeError):
+                        pass
+
+                    try:
+                        os.write(master_fd, message.encode("utf-8"))
+                    except (OSError, ValueError):
+                        break
+            except WebSocketDisconnect:
+                pass
+            except Exception:
+                pass
+
+        ws_task = asyncio.create_task(ws_reader())
+
+        try:
+            await proc.wait()
+        except Exception:
+            pass
+        finally:
+            try:
+                loop.remove_reader(master_fd)
+            except Exception:
+                pass
+            try:
+                os.close(master_fd)
+            except Exception:
+                pass
+            ws_task.cancel()
+            try:
+                await ws_task
+            except asyncio.CancelledError:
+                pass
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                    await proc.wait()
+                except Exception:
+                    pass
+    finally:
+        if slave_fd > 0:
+            try:
+                os.close(slave_fd)
+            except Exception:
+                pass
+
+
+async def _run_windows_terminal(websocket: WebSocket):
+    """Run terminal on Windows with basic line-editing support.
+    Without a native PTY on Windows, the shell runs in pipe mode and
+    does not expose native line editing. This wrapper buffers the
+    current input line locally so backspace works and the full line
+    is only forwarded on Enter."""
+    shell = "powershell.exe"
+    args = ["-NoLogo"]
+
+    try:
         proc = await asyncio.create_subprocess_exec(
             shell,
             *args,
@@ -1001,14 +1141,11 @@ async def terminal_endpoint(websocket: WebSocket):
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            creationflags=creationflags
+            creationflags=0x08000000,
         )
     except Exception as e:
-        try:
-            await websocket.send_text(f"\r\n[Terminal Error] Failed to start shell process: {str(e)}\r\n")
-            await websocket.close()
-        except Exception:
-            pass
+        await websocket.send_text(f"\r\n[Terminal Error] Failed to start shell: {str(e)}\r\n")
+        await websocket.close()
         return
 
     async def read_stdout():
@@ -1020,8 +1157,8 @@ async def terminal_endpoint(websocket: WebSocket):
                 await websocket.send_text(data.decode("utf-8", errors="replace"))
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.warning(f"Terminal stdout read error: {e}")
+        except Exception:
+            pass
 
     async def read_stderr():
         try:
@@ -1032,28 +1169,67 @@ async def terminal_endpoint(websocket: WebSocket):
                 await websocket.send_text(data.decode("utf-8", errors="replace"))
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.warning(f"Terminal stderr read error: {e}")
+        except Exception:
+            pass
 
     async def read_websocket():
+        line_buffer = ""
         try:
             while True:
                 message = await websocket.receive_text()
-                proc.stdin.write(message.encode("utf-8"))
-                await proc.stdin.drain()
+
+                if message in ("\x7f", "\x08"):
+                    if line_buffer:
+                        line_buffer = line_buffer[:-1]
+                        await websocket.send_text("\x08 \x08")
+                    continue
+
+                if message == "\x03":
+                    line_buffer = ""
+                    try:
+                        proc.stdin.write(b"\x03")
+                        await proc.stdin.drain()
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
+                    continue
+
+                if message == "\x04":
+                    line_buffer = ""
+                    try:
+                        proc.stdin.write(b"\x04")
+                        await proc.stdin.drain()
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
+                    continue
+
+                if message in ("\r", "\n"):
+                    try:
+                        proc.stdin.write((line_buffer + "\r\n").encode("utf-8"))
+                        await proc.stdin.drain()
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
+                    line_buffer = ""
+                    continue
+
+                line_buffer += message
+                try:
+                    proc.stdin.write(message.encode("utf-8"))
+                    await proc.stdin.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    break
         except WebSocketDisconnect:
             pass
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.warning(f"Terminal websocket write error: {e}")
+        except Exception:
+            pass
 
     tasks = [
         asyncio.create_task(read_stdout()),
         asyncio.create_task(read_stderr()),
-        asyncio.create_task(read_websocket())
+        asyncio.create_task(read_websocket()),
     ]
-    
+
     try:
         await proc.wait()
     except Exception:
@@ -1062,14 +1238,14 @@ async def terminal_endpoint(websocket: WebSocket):
         for task in tasks:
             if not task.done():
                 task.cancel()
-        
+
         if proc.returncode is None:
             try:
                 proc.terminate()
                 await proc.wait()
             except Exception:
                 pass
-        
+
         try:
             await websocket.close()
         except Exception:

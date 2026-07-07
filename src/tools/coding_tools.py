@@ -86,12 +86,8 @@ def _is_safe_path(filepath: str) -> bool:
     real_workspace = os.path.realpath(WORKSPACE_ROOT)
     abs_path = os.path.realpath(os.path.join(WORKSPACE_ROOT, filepath))
     
-    if os.name == 'nt':
-        if not abs_path.lower().startswith(real_workspace.lower()):
-            return False
-    else:
-        if not abs_path.startswith(real_workspace):
-            return False
+    if not abs_path.lower().startswith(real_workspace.lower()):
+        return False
             
     rel_path = os.path.relpath(abs_path, WORKSPACE_ROOT)
     normalized_rel = rel_path.replace("\\", "/").lower()

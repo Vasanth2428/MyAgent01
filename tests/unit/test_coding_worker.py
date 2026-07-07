@@ -49,7 +49,8 @@ class TestCodingWorker(unittest.TestCase):
         
         res = coding_worker_node(state)
         self.assertEqual(res["worker_complete"]["coding_worker"], True)
-        self.assertEqual(res["worker_outputs"]["coding_worker"], "Finished coding task successfully.")
+        self.assertIn("Finished coding task successfully", res["worker_outputs"]["coding_worker"])
+        self.assertIn("### SUMMARY", res["worker_outputs"]["coding_worker"])
         self.assertIn("Coding Worker", res["scratchpad"])
         self.assertEqual(res["next_agent"], "supervisor")
 
@@ -452,7 +453,8 @@ Action Input: {"directory": "."}
             mock_create.invoke.assert_not_called()
             
             self.assertEqual(res["worker_complete"]["coding_worker"], True)
-            self.assertEqual(res["worker_outputs"]["coding_worker"], "Finished task after resume.")
+            self.assertIn("Finished task after resume", res["worker_outputs"]["coding_worker"])
+            self.assertIn("### SUMMARY", res["worker_outputs"]["coding_worker"])
             
             # verify resume result was appended to the private transcript
             invoked_messages = mock_llm.invoke.call_args[0][0]

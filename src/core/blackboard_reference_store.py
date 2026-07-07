@@ -117,38 +117,35 @@ def get_summary(ref_id: str, max_len: int = 150) -> str:
 
 def compact_scratchpad(scratchpad: str, max_refs: int = 20) -> str:
     """
-    Compact scratchpad by replacing full content with reference summaries.
-    
-    This prevents state bloat while keeping context manageable.
+    Compact scratchpad by dropping noise and preserving code-context lines.
+    Keeps lines with file paths, errors, successes, build/test output, and
+    bullet points that mention verification or file changes.
     """
-    # Extract reference IDs from scratchpad
+    if not scratchpad:
+        return ""
+    
     import re
-    ref_pattern = r'\[REF:([^\]]+)\]'
-    refs = re.findall(ref_pattern, scratchpad)
-    
-    # Build compact view
     lines = scratchpad.split("\n")
-    compact_lines = []
-    ref_count = 0
     
+    code_markers = re.compile(
+        r"(Error|Success|created|modified|scaffolded|APPROVED|REJECTED|py_compile|build|pytest|npm|verify|/workspace|\.jsx?|\.py|\.tsx?|vite|tailwind|exit|status|failed|passed|traceback|exception|assertion)",
+        re.IGNORECASE,
+    )
+    
+    # Keep lines with code markers; drop bare noise
+    relevant = []
     for line in lines:
-        # If line contains a reference and we haven't hit limit, keep it
-        if "[REF:" in line and ref_count < max_refs:
-            # Replace full content with summary
-            match = re.search(r'\[REF:([^\]]+)\]', line)
-            if match:
-                ref_id = match.group(1)
-                summary = get_summary(ref_id)
-                # Extract the rest of the line (e.g., "- [Worker Name]:")
-                prefix_match = re.search(r'^(.*\[REF:[^\]]+\])(.*)$', line)
-                if prefix_match:
-                    compact_lines.append(f"{prefix_match.group(1)} {summary}")
-                    ref_count += 1
-        elif line.startswith("- [") or not line.strip():
-            # Keep headers and empty lines
-            compact_lines.append(line)
+        if code_markers.search(line):
+            relevant.append(line)
     
-    return "\n".join(compact_lines)
+    if not relevant:
+        return ""
+    
+    if len(relevant) <= max_refs:
+        return "\n".join(relevant)
+    
+    kept = relevant[-max_refs:]
+    return "[...earlier context compacted...]\n" + "\n".join(kept)
 
 
 # Initialize cache on module load

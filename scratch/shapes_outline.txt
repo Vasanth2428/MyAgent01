@@ -1,0 +1,239 @@
+
+=========================================
+SLIDE 1
+=========================================
+Title Shape Name: Title 1, Text:              COE INTERNSHIP(JUNE - 2026)
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: COE INTERNSHIP(JUNE - 2026)
+
+  Shape [1]: Subtitle 2 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: Department of computer science and engineering
+
+  Shape [2]: Picture 3 | Type: PICTURE (13)
+
+  Shape [3]: TextBox 5 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 5
+      Para [0]: NAME :
+      Para [1]: REG NO:
+      Para [2]: SEMESTER :
+      Para [3]: FACULTY MENTOR:
+      Para [4]: TITLE:
+
+=========================================
+SLIDE 2
+=========================================
+Title Shape Name: Title 1, Text: INTRODUCTION
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: INTRODUCTION
+
+  Shape [1]: Rectangle 3 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: Cervical cancer is one of the leading causes of cancer-related deaths in women worldwide and is mainly caused by persistent infection with high-risk human papillomavirus (HPV). The viral oncoproteins E6 and E7 disrupt tumor suppressor pathways and promote uncontrolled cell proliferation. Although current treatments are effective, they often produce severe side effects, creating a need for safer and natural therapeutic alternatives.
+
+  Shape [2]: Picture 10 | Type: PICTURE (13)
+
+=========================================
+SLIDE 3
+=========================================
+Title Shape Name: Title 1, Text: Goals of the Internship
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: Goals of the Internship
+
+  Shape [1]: Content Placeholder 2 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 4
+      Para [0]: Goal:
+      Para [1]: To evaluate the anticancer activity of Tinospora cordifolia using HeLa cell assays and molecular docking.
+      Para [2]: To understand its molecular mechanism against cervical cancer targets.
+      Para [3]: Outcome: The extract showed cytotoxic activity against HeLa cells and berberine showed strong binding in docking studies. This confirmed the plant’s potential as a natural anticancer agent.
+
+  Shape [2]: Picture 3 | Type: PICTURE (13)
+
+=========================================
+SLIDE 4
+=========================================
+Title Shape Name: Title 1, Text: Why Tinospora cordifolia?
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: Why Tinospora cordifolia?
+
+  Shape [1]: Rectangle 2 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 5
+      Para [0]: 
+      Para [1]: Tinospora cordifolia has been widely studied for its anticancer activity in various cancer types such as breast, liver, and colon cancer. However, its effect on cervical cancer, particularly against HPV-associated molecular pathways, has not been sufficiently explored. Therefore, this study specifically focuses on evaluating the anticancer potential of Tinospora cordifolia against cervical cancer using HeLa cell line experiments and molecular docking analysis to fill this research gap.
+      Para [2]: 
+      Para [3]: 
+      Para [4]: 
+
+  Shape [2]: Picture 8 | Type: PICTURE (13)
+
+=========================================
+SLIDE 5
+=========================================
+Title Shape Name: Title 1, Text: In Vitro Methodology (HeLa Cell Assay)
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: In Vitro Methodology (HeLa Cell Assay)
+
+  Shape [1]: Picture 4 | Type: PICTURE (13)
+
+  Shape [2]: Content Placeholder 3 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 2
+      Para [0]: HeLa cervical cancer cells were cultured under standard conditions and seeded into 96-well plates. The cells were treated with different concentrations of Tinospora cordifolia leaf extract and incubated for 48 hours. Cytotoxicity was assessed using the MTT assay, which measures mitochondrial metabolic activity as an indicator of cell viability. After incubation with MTT reagent, the formed formazan crystals were dissolved and absorbance was measured spectrophotometrically. The percentage of viable cells was calculated relative to untreated controls, and the IC₅₀ value was determined to quantify the anticancer effect.
+      Para [1]: 
+
+=========================================
+SLIDE 6
+=========================================
+Title Shape Name: Title 1, Text: In Vitro Results
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: In Vitro Results
+
+  Shape [1]: Picture 3 | Type: PICTURE (13)
+
+  Shape [2]: Rectangle 2 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 2
+      Para [0]: 
+      Para [1]: 
+
+  Shape [3]: TextBox 8 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: The MTT cytotoxicity assay showed that Tinospora cordifolia extract produced a significant dose-dependent reduction in HeLa cell viability. Cell viability decreased from 100% in the untreated control to 25.33% at 200 µg/mL concentration. The IC₅₀ value was calculated as 105.18 µg/mL, indicating the concentration required to inhibit 50% of cancer cells. Microscopic observation confirmed morphological changes and cell damage at higher concentrations, supporting the extract’s anticancer activity.
+
+=========================================
+SLIDE 7
+=========================================
+Title Shape Name: Title 1, Text: Visuals
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: Visuals
+
+  Shape [1]: TextBox 26 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: 
+
+  Shape [2]: Picture 27 | Type: PICTURE (13)
+
+  Shape [3]: TextBox 4 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: Figure: Cytotoxicity(Graph) determination of sample TC extract against HeLa Cell lines.
+
+  Shape [4]: Picture 6 | Type: PICTURE (13)
+
+  Shape [5]: Picture 8 | Type: PICTURE (13)
+
+  Shape [6]: TextBox 11 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: Figure: Cytotoxicity levels of sample TC extract against HeLa Cell lines.
+
+=========================================
+SLIDE 8
+=========================================
+Title Shape Name: Title 1, Text: In Silico Molecular Docking Analysis
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: In Silico Molecular Docking Analysis
+
+  Shape [1]: TextBox 40 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 3
+      Para [0]: Molecular docking was performed to predict the interaction between major phytochemicals of Tinospora cordifolia and cervical cancer-related protein targets. Bioactive compounds such as berberine, quercetin, palmatine, and magnoflorine were docked against HPV16 E6, HPV18 E7, COX-2, and Caspase-3 using AutoDock Vina. The docking analysis provided binding affinity values and interaction profiles, allowing the identification of the most active compounds. Berberine and quercetin showed the strongest binding to HPV oncoproteins and apoptosis-related proteins, suggesting their potential role in inhibiting cancer progression at the molecular level.
+      Para [1]: 
+      Para [2]: 
+
+  Shape [2]: Picture 41 | Type: PICTURE (13)
+
+=========================================
+SLIDE 9
+=========================================
+Title Shape Name: Title 1, Text: INSILICO RESULTS
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: INSILICO RESULTS
+
+  Shape [1]: Picture 7 | Type: PICTURE (13)
+
+  Shape [2]: TextBox 3 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: The molecular docking study demonstrated that all selected phytochemicals from Tinospora cordifolia exhibited favorable binding affinity toward cervical cancer-related protein targets. Berberine showed the most stable binding interactions with HPV16 E6 and HPV18 E7 oncoproteins, indicating its potential to block viral-mediated degradation of tumor suppressor proteins. Quercetin also showed strong affinity toward COX-2 and Caspase-3, suggesting its involvement in reducing inflammation and promoting apoptosis. The presence of multiple hydrogen bonds, hydrophobic interactions, and aromatic stacking further stabilized the complexes, indicating that these compounds can effectively interact with and modulate cancer-associated pathways.
+
+=========================================
+SLIDE 10
+=========================================
+No direct title placeholder
+
+  Shape [0]: Picture 5 | Type: PICTURE (13)
+
+  Shape [1]: TextBox 2 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: VISUALS
+
+  Shape [2]: Table 1 | Type: TABLE (19)
+
+  Shape [3]: Picture 3 | Type: PICTURE (13)
+
+  Shape [4]: Picture 4 | Type: PICTURE (13)
+
+  Shape [5]: Picture 6 | Type: PICTURE (13)
+
+  Shape [6]: TextBox 9 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: Figure: Combined 2D Interaction Diagrams of Tinospora cordifolia Phytochemicals Docked to HPV16 E6.
+
+  Shape [7]: Picture 10 | Type: PICTURE (13)
+
+=========================================
+SLIDE 11
+=========================================
+Title Shape Name: Title 1, Text: Conclusion
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: Conclusion
+
+  Shape [1]: Content Placeholder 2 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 2
+      Para [0]: This study demonstrates that Tinospora cordifolia leaf extract exhibits significant anticancer activity against HeLa cervical cancer cells, as evidenced by dose-dependent cytotoxicity and an IC₅₀ value of 105.18 µg/mL. Molecular docking analysis further revealed that key phytochemicals, particularly berberine and quercetin, strongly interact with cervical cancer-related protein targets. The combined in vitro and in silico approach validates both the biological effectiveness and the molecular mechanism of action, highlighting the potential of Tinospora cordifolia as a natural therapeutic candidate for cervical cancer.
+      Para [1]: 
+
+  Shape [2]: Picture 3 | Type: PICTURE (13)
+
+=========================================
+SLIDE 12
+=========================================
+Title Shape Name: Title 1, Text: OUTCOME
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: OUTCOME
+
+  Shape [1]: Picture 3 | Type: PICTURE (13)
+
+  Shape [2]: Content Placeholder 6 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: The internship successfully demonstrated the anticancer potential of Tinospora cordifolia through both experimental and computational approaches. The study generated original in vitro cytotoxicity data on HeLa cells and identified berberine and quercetin as the most active phytochemicals through molecular docking. This work enhanced interdisciplinary skills in cell culture techniques, cytotoxicity assays, molecular docking, and data interpretation, and contributed valuable insights into natural anticancer drug discovery.
+
+  Shape [3]: TextBox 14 | Type: TEXT_BOX (17)
+    Text Frame Paragraphs count: 1
+      Para [0]: 
+
+=========================================
+SLIDE 13
+=========================================
+Title Shape Name: Title 1, Text:                             thank you
+
+  Shape [0]: Title 1 | Type: PLACEHOLDER (14)
+    Text Frame Paragraphs count: 1
+      Para [0]: thank you

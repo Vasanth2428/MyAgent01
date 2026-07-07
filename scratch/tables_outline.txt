@@ -1,0 +1,99 @@
+Total tables: 12
+
+Table 1: 1 rows x 2 columns
+  Row 0: ['Dr.S.Pavithra M.E, ph.D., Head of the Department    Department Internship Coordinator', 'Internal Examiner Date:    External Examiner Date:']
+
+Table 2: 11 rows x 3 columns
+  Row 0: ['', 'CONTENT', '']
+  Row 1: ['Chapter No', 'Title', 'Page No.']
+  Row 2: ['1.', 'Weekly Overview of Internship Activities', '09']
+  Row 3: ['2.', 'Introduction', '10']
+  Row 4: ['3.', 'Problem Statement', '11']
+  Row 5: ['4.', 'Methodology', '12']
+  Row 6: ['5.', 'Observation Done', '20']
+  Row 7: ['6.', 'Complete Analysis of Project', '29']
+  Row 8: ['7.', 'Conclusion', '30']
+  Row 9: ['8.', 'PO & PSO Attainment', '31']
+  Row 10: ['9.', 'Internship Completion Certificate', '33']
+
+Table 3: 5 rows x 2 columns
+  Row 0: ['Week', 'Work done']
+  Row 1: ['Week - 1', 'Orientation and introduction to the research project on anticervical cancer activity of Tinospora cordifolia. Studied cervical cancer biology and HPV-related mechanisms. Reviewed literature on HeLa cell lines and phytochemical anticancer studies. Learned basic laboratory safety procedures, sterile techniques, and cell culture protocols. Prepared research outline and finalized experimental plan for HeLa cytotoxicity testing.']
+  Row 2: ['Week – 2', 'Prepared Tinospora cordifolia leaf extract and performed preliminary phytochemical processing. Cultured HeLa cells under standard conditions and monitored cell viability. Conducted MTT assay to evaluate cytotoxic effects of the extract at different concentrations. Recorded absorbance values  and  observed  dose-dependent  effects  on  cell proliferation.']
+  Row 3: ['Week – 3', 'Analyzed MTT assay results and calculated percentage cell viability and IC₅₀ values. Compared results with control and standard anticancer drugs. Interpreted biological significance of the findings. Drafted the Results and Discussion sections based on HeLa assay outcomes. Prepared graphs and tables for cytotoxicity data.']
+  Row 4: ['Week – 4', 'Reviewed results with the supervisor and incorporated feedback. Finalized the research paper, including formatting, references, and figure alignment. Prepared the final report and presentation. Completed documentation and submission of the internship project.']
+
+Table 4: 7 rows x 4 columns
+  Row 0: ['Tube / Well ID', 'Volume of Stock Solution (µL)', 'Volume of Medium (µL)', 'Final\t\tConcentration (µg/mL)']
+  Row 1: ['T0 (Control)', '0', '1000', '0.0']
+  Row 2: ['T1', '62.5', '937.5', '12.5']
+  Row 3: ['T2', '125', '875', '25.0']
+  Row 4: ['T3', '250', '750', '50.0']
+  Row 5: ['T4', '500', '500', '100.0']
+  Row 6: ['T5', '1000', '0', '200.0']
+
+Table 5: 5 rows x 7 columns
+  Row 0: ['Target Protein', 'PDB ID', 'Biological Role', 'Biological Role', 'Relevance to Cervical Cancer', 'Relevance to Cervical Cancer', 'Relevance to Cervical Cancer']
+  Row 1: ['HPV16 E6', '4XR8', 'Degrades suppressor', 'p53\ttumor', 'Promotes proliferation', 'uncontrolled', 'cell']
+  Row 2: ['HPV18 E7', '2B2Z', 'Inactivates pRb protein', 'Inactivates pRb protein', 'Drives cell-cycle dysregulation', 'Drives cell-cycle dysregulation', 'Drives cell-cycle dysregulation']
+  Row 3: ['COX-2', '5IKQ', 'Catalyzes synthesis', 'prostaglandin', 'Enhances inflammation & tumor growth', 'Enhances inflammation & tumor growth', 'Enhances inflammation & tumor growth']
+  Row 4: ['Caspase-3', '1CP3', 'Executioner of apoptosis', 'Executioner of apoptosis', 'Often downregulated in cancer cells', 'Often downregulated in cancer cells', 'Often downregulated in cancer cells']
+
+Table 6: 7 rows x 2 columns
+  Row 0: ['Concentration (µg/mL)', 'Cell Viability (%)']
+  Row 1: ['0', '100.00']
+  Row 2: ['12.5', '87.92']
+  Row 3: ['25', '72.25']
+  Row 4: ['50', '56.30']
+  Row 5: ['100', '42.53']
+  Row 6: ['200', '25.33']
+
+Table 7: 6 rows x 5 columns
+  Row 0: ['Compound', 'HPV16 E6', 'HPV18 E7', 'COX-2', 'Caspase-3']
+  Row 1: ['Berberine', '−8.4', '−8.1', '−7.5', '−7.2']
+  Row 2: ['Quercetin', '−8.1', '−7.8', '−7.4', '−7.0']
+  Row 3: ['Palmatine', '−7.9', '−7.4', '−7.2', '−6.9']
+  Row 4: ['Magnoflorine', '−7.1', '−6.9', '−6.4', '−6.1']
+  Row 5: ['Tinosporaside', '−6.7', '−6.3', '−6.1', '−5.8']
+
+Table 8: 3 rows x 5 columns
+  Row 0: ['Ligand', 'Target', 'Key\t\tInteracting Residues', 'Dominant Interaction Types', 'Representative Distances\t(Å, approx.)']
+  Row 1: ['Berberine', 'HPV16 E6', 'Ala49,\tCys51, Leu50, Ser74', 'H-bond, hydrophobic contacts, π–π stacking', 'H-bond 2.7–3.0; π–π 3.4–4.0']
+  Row 2: ['Berberine', 'HPV18 E7', 'Glu26,\tCys24,', 'H-bond, π–π stacking,', 'H-bond\t~2.8–3.1;']
+
+Table 9: 12 rows x 5 columns
+  Row 0: ['Ligand', 'Target', 'Key\t\tInteracting Residues', 'Dominant Interaction Types', 'Representative Distances\t(Å, approx.)']
+  Row 1: ['', '', 'Trp27', 'hydrophobic', 'π–π 3.5–4.0']
+  Row 2: ['Berberine', 'COX-2', 'Tyr385,\tSer530, Val434', 'H-bond anchoring + hydrophobic tunnel insertion', 'H-bond ~2.8–3.2']
+  Row 3: ['Berberine', 'Caspase-3', 'Cys163,\tHis121, Asp175', 'H-bond to active-site residues, stabilizing contacts', 'H-bond ~2.9–3.2']
+  Row 4: ['Quercetin', 'HPV16 E6', 'Asn49,\tHis50, Thr55', 'Multiple H-bonds, edge-to-face aromatic interactions', 'H-bonds 2.6–3.1']
+  Row 5: ['Quercetin', 'HPV18 E7', 'Asnxx\t(equiv.), Gluxx', 'H-bond\tnetwork\t+ hydrophobic packing', 'H-bonds 2.7–3.2']
+  Row 6: ['Quercetin', 'COX-2', 'Arg120 (analogue), Gly526', 'H-bond\tanchoring near catalytic residues', 'H-bonds 2.7–3.1']
+  Row 7: ['Quercetin', 'Caspase-3', 'Asp175 (or prox.), backbone amides', 'H-bonding\t&\tpolar contacts', 'H-bond ~2.8–3.2']
+  Row 8: ['Palmatine', 'HPV16 E6', 'Asn51,\tPhexx, Leuxx', 'π–π\tinteractions, hydrophobic contacts, some H-bonding', 'H-bond\t~3.0–3.3; π–π 3.5–4.0']
+  Row 9: ['Palmatine', 'COX-2', 'Phe/Tyr\tresidues lining tunnel', 'Hydrophobic insertion + aromatic stacking', 'contacts 3.5–4.2']
+  Row 10: ['Magnoflorine', 'HPV proteins\t/ COX-2', 'Peripheral hydrophobic\t& polar residues', 'Hydrophobic contacts, limited H-bonds', 'H-bond ~3.0']
+  Row 11: ['Tinosporaside', 'Various (surface)', 'Surface\tpolar residues', 'Polar\tsurface interactions; limited pocket penetration', 'H-bond ~2.9–3.3']
+
+Table 10: 11 rows x 4 columns
+  Row 0: ['PO .No', 'Graduate Attribute', 'Attained', 'Justification']
+  Row 1: ['PO1', 'Engineering knowledge', 'Yes', 'The Engineering Knowledge has been successfully gained.']
+  Row 2: ['PO2', 'Problem analysis', 'Yes', 'Analysis is done on current problem or opportunity.']
+  Row 3: ['PO3', 'Design/Development of solutions', 'Yes', 'A solution was not developed based on the given problem and source']
+  Row 4: ['PO4', 'Conduct investigations of complex problems', 'Yes', 'Investigations were not done on the problems\toptions\tthat\tpeople wanted.']
+  Row 5: ['PO5', 'Modern Tool usage', 'Yes', 'Implemented the Web Application.']
+  Row 6: ['PO6', 'The Engineer and society', 'Yes', 'The solution is made to help the society.']
+  Row 7: ['PO7', 'Environment and Sustainability', 'Yes', 'This could include using Web Site optimizing based on product availability.']
+  Row 8: ['PO8', 'Ethics', 'Yes', 'This could involve ensuring fair labour practices, treating customers and employees with respect, and promoting transparency in your Business operations.']
+  Row 9: ['PO9', 'Individual and team work', 'Yes', 'This could involve individual contributions to the codebase, collaboration with othersduringthe development process, and effective communication within the team.']
+  Row 10: ['PO10', 'Communication', 'Yes', 'This could involve clear and concise user interfaces, effective error handling, and timely notifications to users regarding their orders or any updates']
+
+Table 11: 3 rows x 4 columns
+  Row 0: ['PO. No', 'Graduate Attribute', 'Attained', 'Justification']
+  Row 1: ['PO11', 'Project management and finance', 'Yes', 'This could include features such as product purchasing, and managing the overall project timeline and budget.']
+  Row 2: ['PO12', 'Life- long learning', 'Yes', 'This could involve keeping up with the latest technologies and best practices in software development, incorporating user feedback to improve the app, and striving for Personal and professional growth.']
+
+Table 12: 3 rows x 4 columns
+  Row 0: ['PSO .No', 'Graduate Attribute', 'Attained', 'Justification']
+  Row 1: ['PSO1', 'To analyze, design and develop solutions by applying the concepts of Robotics for societal and Industrial needs.', 'No', 'Application of concepts of robotics are not yet given.']
+  Row 2: ['PSO2', 'To create innovative ideas and solutions for real time problems in Manufacturing sector by adapting the automation Tools and technologies.', 'No', 'Innovative ideas and solutions for real time problems in Manufacturing sector by adapting the automation tools and technologies are not done.']

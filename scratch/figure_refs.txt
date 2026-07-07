@@ -1,0 +1,8 @@
+P[122] (Body Text): The Weaviate retriever connects to Weaviate Cloud using HuggingFace server-side vectorization. We configured the 'RAGKnowledge' collection with properties for text, source metadata, and upload timestamps. Deterministic UUIDs are generated for each chunk to prevent duplicate indexing of the same content.
+P[142] (Body Text): This function ensures that file modifications are restricted to the configured workspace root directory, preventing directory traversal attacks.
+P[152] (Body Text): We configured the system to resolve API keys dynamically based on the active provider (Groq vs Google GenAI). This was integrated using a unified model builder fallback constructor.
+P[173] (Heading 7): Figure 4. Token load comparison between conventional read/write and optimized surgical coding pipelines.
+P[178] (Heading 7): Figure 5. Memory usage and query latency profiles of the local hybrid vector search and semantic cache.
+P[206] (Normal): Figure 5. (Heatmap): Heatmap of system latency across different worker agents and model parameters.
+P[223] (Heading 7): Figure 6. Diagram of agent coordination state changes in LangGraph.
+P[233] (Normal): Figure 7. Flowchart of state transitions during developer agent runs.

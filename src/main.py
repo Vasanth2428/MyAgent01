@@ -57,6 +57,7 @@ def run_query(query: str, thread_id: str = "default"):
     
     config = get_graph_config(thread_id)
     
+    bypass_hitl = os.getenv("BYPASS_HITL", "false").lower() == "true"
     initial_state = {
         "messages": [HumanMessage(content=query)],
         "next_agent": "supervisor",
@@ -73,6 +74,7 @@ def run_query(query: str, thread_id: str = "default"):
         "patch_is_verified": False,
         "active_project": "",
         "session_id": "default_session",
+        "bypass_hitl": bypass_hitl,
         # Pipeline 1: Retrieval context cache references
         "context_cache_id": None,
         "active_document_ids": [],

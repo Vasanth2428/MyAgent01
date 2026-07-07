@@ -228,9 +228,6 @@ def _get_session_id(state: dict) -> str:
     return config.get("thread_id", "default")
 
 
-
-
-
 def _approval_decision_from_message(message: str) -> str:
 
     text = (message or "").strip().lower()
@@ -239,26 +236,15 @@ def _approval_decision_from_message(message: str) -> str:
 
         return ""
 
-
-
-    approval_phrases = ["approve", "yes", "ok", "go ahead", "apply", "proceed", "yep", "sure"]
-
-    rejection_phrases = ["reject", "no", "deny", "stop", "cancel", "dont", "don't"]
-
-
-
-    if any(phrase in text for phrase in approval_phrases):
+    if text.startswith("/approve"):
 
         return "approved"
 
-    if any(phrase in text for phrase in rejection_phrases):
+    if text.startswith("/reject"):
 
         return "rejected"
 
     return ""
-
-
-
 
 
 def _approval_decision_from_state(state: dict) -> str:
@@ -526,6 +512,8 @@ def supervisor_node(state: dict) -> dict:
                 f"{state.get('approval_tool') or 'file operation'} on "
 
                 f"{state.get('approval_filepath') or ', '.join(blocked_files)}."
+
+                f" Please reply with '/approve' to proceed or '/reject' to cancel."
 
             )
 
@@ -835,7 +823,7 @@ def supervisor_node(state: dict) -> dict:
 
         # Also record in persistent references for future context
 
-        state_update_overrides["scratchpad_references"] = (state_update_overrides.get("scratchpad_references", []) + [err_msg.strip()])
+        state_update_overrides["scratchpad_references"] = scratchpad_references + [err_msg.strip()]
 
 
 
@@ -869,30 +857,46 @@ def supervisor_node(state: dict) -> dict:
 
 
 
-    # Hard plan-completion guard: prevent premature synthesis when planned files are missing
-
+    # Hard plan-completion guard: prevent premature synthesis when planned file creations have no evidence
     if next_agent == "synthesizer" and plan_out:
-
-        missing_planned_files = [
-
-            step for step in plan_out
-
-            if any(keyword in step.lower() for keyword in ["create", "scaffold", "build", "implement", "write", "generate"])
-
-            and not any(created_file for created_file in created_files if step.lower().split(":")[0].strip() in created_file.lower())
-
-        ]
+        file_creation_steps = []
+        for step in plan_out:
+            step_lower = step.lower()
+            # Only treat steps as file-creation if they explicitly mention files/paths/specific artifacts
+            if any(kw in step_lower for kw in ["create file", "create the file", "scaffold", "generate file", "write file", "implement file", "build file", "create src/", "create app.", "create component"]):
+                file_creation_steps.append(step)
+        
+        missing_planned_files = []
+        for step in file_creation_steps:
+            step_lower = step.lower()
+            # Extract probable filenames from the step text
+            # Match patterns like src/App.jsx, app.tsx, ./file.py, "the file", etc.
+            import re
+            mentioned_paths = re.findall(r"(?:^|[\s\n])((?:\.?/?(?:workspace/)?[\w\-]+/[\w\-/]*\.[a-zA-Z0-9]+|(?:src|lib|app|components)/[\w\-/]+|['\"]([^'\"]+)['\"])", step_lower)
+            possible_names = [p[0] or p[1] for p in mentioned_paths if (p[0] or p[1])]
+            possible_names = [n.strip("./") for n in possible_names]
+            
+            # Also try extracting quoted paths
+            quoted = re.findall(r"['\"`]([^'\"`]+)['\"`]", step)
+            possible_names.extend(quoted)
+            
+            # Check if any created_file matches one of the possible names
+            has_match = False
+            for created_file in created_files:
+                created_lower = created_file.lower()
+                for name in possible_names:
+                    if name and (name in created_lower or created_lower.endswith(name) or name in created_lower.split("/")):
+                        has_match = True
+                        break
+            
+            if not has_match:
+                missing_planned_files.append(step)
 
         if missing_planned_files:
-
-            logger.warning(f"[SUPERVISOR] Hard guard blocked synthesis: {len(missing_planned_files)} planned steps have no created_files evidence.")
-
+            logger.warning(f"[SUPERVISOR] Hard guard blocked synthesis: {len(missing_planned_files)} planned file-creation steps have no created_files evidence.")
             next_agent = "coding_worker"
-
-            current_task = f"Complete remaining plan steps and verify file creation: {'; '.join(missing_planned_files[:3])}"
-
+            current_task = f"Complete remaining file-creation plan steps and verify file creation: {'; '.join(missing_planned_files[:3])}"
             plan_out = [step for step in plan_out if step not in missing_planned_files] + missing_planned_files
-
             active_project_override = active_project_override or state.get("active_project") or None
 
 
@@ -945,6 +949,8 @@ def supervisor_node(state: dict) -> dict:
 
 
 
+
+
     # Track dispatched task in completed_tasks list
 
     new_completed_tasks = list(completed_tasks)
@@ -953,43 +959,28 @@ def supervisor_node(state: dict) -> dict:
 
         new_completed_tasks.append(task_fingerprint)
 
-
-
     state_update = {
-
         "plan": plan_out,
-
         "next_agent": next_agent,
-
         "current_task": current_task,
-        
         "active_project": active_project_override if active_project_override is not None else (state.get("active_project") or None),
-
         "steps_remaining": new_steps,
-
         "scratchpad": compact_scratchpad_text,
-
         "retry_counter": new_retry_counter,
-
         "worker_output_summaries": summaries,
-
         "worker_output_ids": worker_output_ids,
-
         "scratchpad_references": scratchpad_references,
-
         "completed_tasks": new_completed_tasks,
-        
         "created_files": created_files,
-
     }
-
     
+    # Reset coding worker phase and step for new tasks
+    if next_agent == "coding_worker" and current_task != state.get("current_task"):
+        state_update["coding_worker_phase"] = "PLANNING"
+        state_update["coding_worker_step"] = 0
 
     state_update.update(state_update_overrides)
-
-
 
     print(f"\n[SUPERVISOR] Next Node: '{next_agent}' | Task: '{current_task}' | Steps Left: {new_steps} | Retries: {new_retry_counter}")
 
     return state_update
-

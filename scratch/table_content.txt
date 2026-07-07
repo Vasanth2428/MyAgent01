@@ -1,0 +1,7 @@
+Table found: 6 rows x 5 columns
+  Row 0: ['Compound', 'HPV16 E6', 'HPV18 E7', 'COX-2', 'Caspase-3']
+  Row 1: ['Berberine', '−8.4', '−8.1', '−7.5', '−7.2']
+  Row 2: ['Quercetin', '−8.1', '−7.8', '−7.4', '−7.0']
+  Row 3: ['Palmatine', '−7.9', '−7.4', '−7.2', '−6.9']
+  Row 4: ['Magnoflorine', '−7.1', '−6.9', '−6.4', '−6.1']
+  Row 5: ['Tinosporaside', '−6.7', '−6.3', '−6.1', '−5.8']
