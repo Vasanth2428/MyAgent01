@@ -20,14 +20,14 @@ def main():
     graph = build_multi_agent_graph(checkpointer)
     
     # Simple query
-    query = "Create a React frontend and Python FastAPI backend for a crypto portfolio website inside `./workspace/crypto_portfolio` (place frontend files under 'crypto_portfolio/frontend' and backend files under 'crypto_portfolio/backend')"
+    query = "Create a full stack website for a prestigious university (University of Advanced Sciences). It must be at the level of an actual premium college website, including admissions, academics, campus life, and an admin dashboard. Use a Node.js Express backend and a React frontend. Place it in `./workspace/college_website`."
     config = get_graph_config(f"live_build_{int(time.time())}")
     
     from src.graph.state_2pipeline import create_initial_state
     initial_state = create_initial_state([HumanMessage(content=query)], bypass_hitl=True)
     initial_state.update({
         "steps_remaining": 15,
-        "active_project": "crypto_portfolio",
+        "active_project": "college_website",
         "session_id": f"live_build_{int(time.time())}"
     })
     

@@ -78,7 +78,7 @@ def _is_safe_path(filepath: str) -> bool:
         while clean_path.startswith("./"):
             clean_path = clean_path[2:]
             
-        allowed_root_configs = {"vite.config.js", "package.json"}
+        allowed_root_configs = {"vite.config.js", "package.json", ".", ""}
         if clean_path not in allowed_root_configs:
             if not (clean_path == _active_project or clean_path.startswith(_active_project + "/") or clean_path.startswith(_active_project + "_")):
                 return False
@@ -350,6 +350,54 @@ def edit_code_file(filepath: str, target: str, replacement: str) -> str:
         return f"Error editing file '{filepath}': {e}"
 
 
+def _multi_replace_file_content(filepath: str, chunks: list) -> str:
+    """
+    Replace multiple specific line ranges with replacement content.
+    chunks: list of dict with StartLine, EndLine, TargetContent, ReplacementContent
+    """
+    from src.tools.rollback import backup_file
+    
+    if not _is_safe_path(filepath):
+        return f"Error: Access denied. Filepath '{filepath}' violates safety or path policies."
+        
+    if not _has_allowed_extension(filepath):
+        return f"Error: Access denied. File extension not allowed. Approved extensions: {', '.join(ALLOWED_EXTENSIONS)}"
+        
+    abs_path = _get_absolute_path(filepath)
+    if not os.path.isfile(abs_path):
+        return f"Error: File '{filepath}' does not exist."
+        
+    try:
+        with open(abs_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        backup_file(filepath)
+        
+        # Process chunks from bottom up to avoid index shifting
+        sorted_chunks = sorted(chunks, key=lambda x: x.get('StartLine', 0), reverse=True)
+        
+        for chunk in sorted_chunks:
+            start_line = chunk.get("StartLine", 1) - 1
+            end_line = chunk.get("EndLine", len(lines))
+            target = chunk.get("TargetContent", "")
+            replacement = chunk.get("ReplacementContent", "")
+            
+            # Simple substring replace within the targeted lines
+            target_lines = "".join(lines[start_line:end_line])
+            if target not in target_lines:
+                return f"Error: TargetContent not found in lines {start_line+1}-{end_line}."
+            
+            new_lines_str = target_lines.replace(target, replacement, 1)
+            lines = lines[:start_line] + [new_lines_str] + lines[end_line:]
+            
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+            
+        return f"Success: Modified '{filepath}' successfully with {len(chunks)} chunk(s)."
+    except Exception as e:
+        return f"Error in multi_replace: {e}"
+
+
 def modify_files(filepath: str, target_code: str, replacement_code: str) -> str:
     """Search and replace a specific block of text in a file inside `./workspace`. Fails if file does not exist."""
     from src.tools.rollback import backup_file
@@ -463,227 +511,10 @@ def list_files(directory: str = ".") -> str:
         return f"Error listing directory '{directory}': {e}"
 
 
-def _is_safe_command(cmd_args: List[str]) -> bool:
-    """Check if the command and arguments are safely within strict allowlist limits."""
-    if not cmd_args:
-        return False
-        
-    # Block shell command injection metacharacters in any argument
-    for arg in cmd_args:
-        if any(c in arg for c in [";", "&", "|", "$", "`"]):
-            return False
-            
-    executable = cmd_args[0]
-    
-    if executable not in ["python", "pytest", "npm", "git", "npx"]:
-        return False
-        
-    if executable == "python":
-        if len(cmd_args) >= 3 and cmd_args[1] == "-m":
-            module = cmd_args[2]
-            if module == "py_compile":
-                if len(cmd_args) == 4:
-                    return _is_safe_path(cmd_args[3])
-                return False
-            elif module == "http.server":
-                if len(cmd_args) == 3:
-                    return True
-                elif len(cmd_args) == 4:
-                    return cmd_args[3].isdigit()
-                return False
-            elif module == "pip":
-                if len(cmd_args) >= 5 and cmd_args[3] == "install":
-                    import re
-                    pip_flags = {"--upgrade", "--force-reinstall", "--no-cache-dir", "--user"}
-                    filtered_pip_args = []
-                    for arg in cmd_args[4:]:
-                        if arg not in pip_flags:
-                            filtered_pip_args.append(arg)
-                            
-                    if not filtered_pip_args:
-                        return False
-                        
-                    # python -m pip install -r requirements.txt
-                    if filtered_pip_args[0] == "-r" and len(filtered_pip_args) == 2:
-                        req_path = filtered_pip_args[1]
-                        return "requirements.txt" in req_path and ".." not in req_path
-                        
-                    for pkg in filtered_pip_args:
-                        if not re.match(r"^[a-zA-Z0-9\-@_/<>=!.^]+$", pkg):
-                            return False
-                    return True
-        # Allow running scripts directly in the workspace
-        if len(cmd_args) == 2:
-            return _is_safe_path(cmd_args[1])
-        return False
-        
-    if executable == "pytest":
-        pytest_flags = {"-v", "-s", "-q", "--version", "--tb=short", "--tb=line", "--no-header", "--disable-warnings", "-x", "--exitfirst", "--lf", "--last-failed", "--ff", "--failed-first", "--cache-show", "--co", "--collect-only"}
-        for arg in cmd_args[1:]:
-            if arg.startswith("-"):
-                if arg not in pytest_flags:
-                    return False
-            else:
-                if not _is_safe_path(arg):
-                    return False
-        return True
-        
-    if executable == "npm":
-        # Handle --prefix <path> in arguments
-        cleaned_npm_args = []
-        prefix_dir = None
-        i = 1
-        while i < len(cmd_args):
-            if cmd_args[i] == "--prefix":
-                if i + 1 < len(cmd_args):
-                    prefix_dir = cmd_args[i+1]
-                    i += 2
-                    continue
-                else:
-                    return False
-            cleaned_npm_args.append(cmd_args[i])
-            i += 1
-            
-        if prefix_dir is not None:
-            if not _is_safe_path(prefix_dir):
-                return False
-                
-        npm_flags = {"-D", "--save-dev", "--save", "--no-save", "--save-optional", "--no-optional", "--legacy-peer-deps", "--force", "--package-lock-only", "--no-audit", "--no-fund", "--ignore-scripts", "--silent", "--verbose", "--progress", "--yes", "--json"}
-        filtered_npm_args = []
-        for arg in cleaned_npm_args:
-            if arg not in npm_flags:
-                filtered_npm_args.append(arg)
-                
-        if not filtered_npm_args:
-            return False
-            
-        if filtered_npm_args[0] in ["install", "ci"]:
-            return True
-        if filtered_npm_args[0] == "uninstall":
-            return len(filtered_npm_args) >= 2
-        if filtered_npm_args[0] == "update":
-            return True
-        if filtered_npm_args[0] == "run":
-            if len(filtered_npm_args) >= 2:
-                import re
-                script_name = filtered_npm_args[1]
-                return bool(re.match(r"^[a-zA-Z0-9_-]+$", script_name))
-            return False
-        if filtered_npm_args[0] == "exec":
-            return True
-        if filtered_npm_args[0] == "config":
-            return True
-        if filtered_npm_args[0] in ["cache", "audit", "outdated", "ls", "search", "view", "publish", "pack", "version", "whoami", "login", "logout"]:
-            return True
-        return False
-        
-    if executable == "npx":
-        if len(cmd_args) < 2:
-            return False
-        npx_cmd = cmd_args[1]
-        if npx_cmd == "tailwindcss":
-            return True
-        if npx_cmd in ("shadcn@latest", "shadcn-ui@latest"):
-            return True
-        if npx_cmd.startswith("shadcn@"):
-            return True
-        return False
-        
-    if executable == "git":
-        git_commands = {"status", "diff", "log", "checkout", "branch", "add", "commit", "push", "pull", "fetch", "reset", "restore", "stash", "rebase", "merge", "remote", "tag", "show", "blame", "grep", "ls-files", "ls-tree", "rev-parse"}
-        if len(cmd_args) >= 2 and cmd_args[1] in git_commands:
-            return True
-        return False
-        
-    return False
-
-
-def _prepare_command_execution(cmd_args: List[str]) -> Tuple[List[str], str]:
-    """Return subprocess args and cwd after applying safe workspace-scoped command options."""
-    exec_args = list(cmd_args)
-    cwd = WORKSPACE_ROOT
-
-    if exec_args and exec_args[0] == "npm":
-        i = 1
-        while i < len(exec_args):
-            if exec_args[i] == "--prefix":
-                if i + 1 >= len(exec_args):
-                    break
-                prefix_dir = exec_args[i + 1]
-                if not _is_safe_path(prefix_dir):
-                    break
-                cwd = _get_absolute_path(prefix_dir)
-                del exec_args[i:i + 2]
-                break
-            i += 1
-            
-    if os.name == 'nt' and exec_args and exec_args[0] == "npx":
-        exec_args[0] = "npx.cmd"
-
-    return exec_args, cwd
-
-
-def _parse_command_errors(stdout: str, stderr: str) -> str:
-    """Parses command stdout/stderr to identify specific compilation/execution errors and yield actionable suggestions."""
-    combined = (stdout or "") + "\n" + (stderr or "")
-    suggestions = []
-    import re
-    
-    # 1. Match standard Python traceback patterns (File "...", line X)
-    py_simple_trace = re.findall(r'File\s+["\'](.*?)["\'],\s+line\s+(\d+)', combined)
-    py_err_lines = re.findall(r'(\w+Error:\s+[^\n]*)', combined)
-    
-    if py_simple_trace:
-        seen = set()
-        for filepath, line_num in py_simple_trace:
-            clean_file = filepath.replace("\\", "/")
-            if (clean_file, line_num) in seen:
-                continue
-            seen.add((clean_file, line_num))
-            err_msg = py_err_lines[0] if py_err_lines else "Syntax or runtime error"
-            suggestions.append(
-                f"💡 DETECTED PYTHON ERROR:\n"
-                f"  - File: {clean_file}\n"
-                f"  - Line: {line_num}\n"
-                f"  - Error: {err_msg}\n"
-                f"  - Action required: Open '{clean_file}' around line {line_num} and fix the syntax/execution issue."
-            )
-            
-    # 2. Match missing Python dependencies
-    module_missing = re.findall(r'(?:ModuleNotFoundError|ImportError):\s*No\s+module\s+named\s+["\'](.*?)["\']', combined)
-    for mod in module_missing[:2]:
-        suggestions.append(
-            f"💡 DETECTED MISSING DEPENDENCY:\n"
-            f"  - Missing Python Module: '{mod}'\n"
-            f"  - Action required: Add '{mod}' to your requirements.txt dependency file or install it."
-        )
-        
-    # 3. Match frontend build errors (e.g. src/App.jsx:5:10)
-    frontend_errors = re.findall(
-        r'(\S+\.(?:jsx?|tsx?|css|js|ts))(?::|\s+line\s+)(\d+)(?::(\d+))?[\s:]*(.*error.*|.*failed.*|.*resolved.*)',
-        combined,
-        re.IGNORECASE
-    )
-    if frontend_errors:
-        seen = set()
-        for filepath, line_num, col_num, err_desc in frontend_errors:
-            clean_file = filepath.replace("\\", "/")
-            if (clean_file, line_num) in seen:
-                continue
-            seen.add((clean_file, line_num))
-            col_str = f", Col: {col_num}" if col_num else ""
-            suggestions.append(
-                f"💡 DETECTED FRONTEND BUILD ERROR:\n"
-                f"  - File: {clean_file}\n"
-                f"  - Line: {line_num}{col_str}\n"
-                f"  - Detail: {err_desc.strip()[:180]}\n"
-                f"  - Action required: Open '{clean_file}' around line {line_num} and resolve the build/compilation error."
-            )
-            
-    if suggestions:
-        return "\n\n=== 🛠️ AUTO-PARSED ERRORS & ACTIONABLE SUGGESTIONS ===\n" + "\n\n".join(suggestions) + "\n=======================================================\n"
-    return ""
-
+_active_tasks = {}
+_task_outputs = {}
+import uuid
+import threading
 
 def _build_response(status: str, message: str, data: dict = None) -> str:
     import json
@@ -692,173 +523,97 @@ def _build_response(status: str, message: str, data: dict = None) -> str:
 def _build_error_response(message: str, data: dict = None) -> str:
     return _build_response("error", message, data)
 
-def _get_command_resource_limits(command: str) -> dict:
-    cmd = command.strip().lower()
-    if any(cmd.startswith(pfx) for pfx in ["npm install", "npm ci", "npm uninstall"]):
-        return {"timeout": 180.0, "memory_mb": 768, "cpu_seconds": 60.0}
-    if cmd.startswith("npm ") or cmd.startswith("npx "):
-        return {"timeout": 120.0, "memory_mb": 512, "cpu_seconds": 40.0}
-    if cmd.startswith("pytest"):
-        return {"timeout": 120.0, "memory_mb": 256, "cpu_seconds": 30.0}
-    if cmd.startswith("python"):
-        return {"timeout": 120.0, "memory_mb": 256, "cpu_seconds": 30.0}
-    if cmd.startswith("git"):
-        return {"timeout": 60.0, "memory_mb": 128, "cpu_seconds": 15.0}
-    return {"timeout": 60.0, "memory_mb": 256, "cpu_seconds": 15.0}
-
-def _terminate_process_tree(proc, p):
-    try:
-        if p:
-            for child in p.children(recursive=True):
-                try:
-                    child.kill()
-                except Exception:
-                    pass
-        proc.kill()
-    except Exception:
-        pass
-
-def _measure_memory_mb(p) -> float:
-    total_mb = 0.0
-    try:
-        mem_info = p.memory_info()
-        total_mb += mem_info.rss / (1024 * 1024)
-        for child in p.children(recursive=True):
-            try:
-                total_mb += child.memory_info().rss / (1024 * 1024)
-            except Exception:
-                pass
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
-    return total_mb
-
-def _measure_cpu_time(p) -> float:
-    total_cpu = 0.0
-    try:
-        cpu_times = p.cpu_times()
-        total_cpu += cpu_times.user + cpu_times.system
-        for child in p.children(recursive=True):
-            try:
-                c_times = child.cpu_times()
-                total_cpu += c_times.user + c_times.system
-            except Exception:
-                pass
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
-    return total_cpu
-
-def _safe_read_stream(stream, max_bytes=1024*1024) -> str:
-    if hasattr(stream, 'seek'):
-        try:
-            stream.seek(0)
-        except Exception:
-            pass
-    return stream.read(max_bytes)
-
-def execute_command(command: str) -> str:
-    """Execute a command in the `./workspace` folder securely and return a JSON response.
-    The JSON contains keys: status (ok/error), message, data (stdout, stderr, returncode).
-    """
+def execute_command(command: str, background: bool = False) -> str:
+    """Execute a shell command in the `./workspace` folder securely and return a JSON response."""
     cmd_clean = command.strip()
     if not cmd_clean:
         return _build_error_response("Empty command provided.")
         
-    try:
-        cmd_args = shlex.split(cmd_clean, posix=True)
-    except Exception as e:
-        return _build_error_response(f"Error parsing command line: {e}")
-        
-    if not cmd_args:
-        return _build_error_response("Empty command provided.")
-        
-    if not _is_safe_command(cmd_args):
-        return _build_error_response(f"Command '{command}' blocked by safety policy. Command is not in allowlist.")
-
-    exec_args, exec_cwd = _prepare_command_execution(cmd_args)
-    print(f"\n[SECURE RUN] Executing command: {exec_args} in '{exec_cwd}'")
+    exec_cwd = WORKSPACE_ROOT
+    print(f"\n[EXEC] Executing command: {cmd_clean} in '{exec_cwd}' (background={background})")
     
-    try:
-        with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stdout_file, \
-             tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr_file:
-            
+    if background:
+        task_id = str(uuid.uuid4())[:8]
+        try:
             kwargs = {}
             if os.name == 'nt':
                 kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-            
+                
             proc = subprocess.Popen(
-                exec_args,
-                cwd=exec_cwd,
-                stdout=stdout_file,
-                stderr=stderr_file,
-                text=True,
+                cmd_clean, shell=True, cwd=exec_cwd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE, text=True,
                 **kwargs
             )
+            _active_tasks[task_id] = proc
+            _task_outputs[task_id] = []
             
-            try:
-                p = psutil.Process(proc.pid)
-            except psutil.NoSuchProcess:
-                p = None
-                
-            limits = _get_command_resource_limits(cmd_clean)
-            timeout = limits["timeout"]
-            mem_limit_mb = limits["memory_mb"]
-            cpu_limit_s = limits["cpu_seconds"]
-            start_time = time.time()
+            def _read_output():
+                for line in iter(proc.stdout.readline, ''):
+                    if line:
+                        _task_outputs[task_id].append(line)
+            threading.Thread(target=_read_output, daemon=True).start()
             
-            while proc.poll() is None:
-                elapsed = time.time() - start_time
-                if elapsed > timeout:
-                    _terminate_process_tree(proc, p)
-                    return _build_error_response(f"Command execution timed out after {timeout} seconds.")
-                    
-                if p:
-                    mem_mb = _measure_memory_mb(p)
-                    if mem_mb > mem_limit_mb:
-                        _terminate_process_tree(proc, p)
-                        return _build_error_response(f"Command execution exceeded memory limit of {mem_limit_mb}MB (used {mem_mb:.2f}MB).")
-                    
-                    cpu_time_used = _measure_cpu_time(p)
-                    if cpu_time_used > cpu_limit_s:
-                        _terminate_process_tree(proc, p)
-                        return _build_error_response(f"Command execution exceeded CPU time limit of {cpu_limit_s}s (used {cpu_time_used:.2f}s CPU time).")
-                        
-                time.sleep(0.1)
-                
-            stdout_data = _safe_read_stream(stdout_file)
-            stderr_data = _safe_read_stream(stderr_file)
-            
-            output = []
-            if stdout_data:
-                output.append("--- stdout ---")
-                output.append(stdout_data)
-            if stderr_data:
-                output.append("--- stderr ---")
-                output.append(stderr_data)
-                
-            status = f"\n[Command exited with status {proc.returncode}]"
-            
-            parsed_errors = ""
-            if proc.returncode != 0:
-                parsed_errors = _parse_command_errors(stdout_data, stderr_data)
-                
-            response_data = {
-                "stdout": stdout_data,
-                "stderr": stderr_data,
-                "returncode": proc.returncode,
-                "cwd": exec_cwd,
-                "parsed_errors": parsed_errors.strip()
-            }
-            return _build_response("ok" if proc.returncode == 0 else "error", "Command execution completed.", response_data)
-            
+            return _build_response("ok", "Started background task", {"task_id": task_id})
+        except Exception as e:
+            return _build_error_response(str(e))
+    else:
+        try:
+            result = subprocess.run(cmd_clean, shell=True, cwd=exec_cwd, capture_output=True, text=True, timeout=300)
+            return _build_response(
+                "ok" if result.returncode == 0 else "error",
+                "Command finished",
+                {"stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
+            )
+        except subprocess.TimeoutExpired:
+            return _build_error_response("Command timed out after 300 seconds. If this is a long-running command, run it in the background.")
+        except Exception as e:
+            return _build_error_response(str(e))
+
+def run_safe_commands(command: str, background: bool = False) -> str:
+    """Execute a shell command in the `./workspace` folder. Set background=True for servers or long builds."""
+    return execute_command(command, background)
+
+def check_task_status(task_id: str) -> str:
+    """Check the status and recent output of a background task."""
+    if task_id not in _active_tasks:
+        return _build_error_response(f"Invalid task ID: {task_id}")
+    proc = _active_tasks[task_id]
+    output = "".join(_task_outputs[task_id][-50:])
+    status = "running" if proc.poll() is None else f"exited with code {proc.returncode}"
+    return _build_response("ok", f"Task {status}", {"output": output})
+
+def send_task_input(task_id: str, text: str) -> str:
+    """Send input to a background task."""
+    if task_id not in _active_tasks:
+        return _build_error_response(f"Invalid task ID: {task_id}")
+    proc = _active_tasks[task_id]
+    if proc.poll() is not None:
+        return _build_error_response("Task already exited")
+    try:
+        proc.stdin.write(text + "\n")
+        proc.stdin.flush()
+        return _build_response("ok", "Input sent")
     except Exception as e:
-        return _build_error_response(f"Error executing command: {e}")
+        return _build_error_response(str(e))
 
-
-def run_safe_commands(command: str) -> str:
-    """Execute a shell command in the `./workspace` folder using the secure executor.
-    Returns the same JSON structure as :func:`execute_command`.
-    """
-    return execute_command(command)
+def kill_task(task_id: str) -> str:
+    """Kill a background task."""
+    if task_id not in _active_tasks:
+        return _build_error_response(f"Invalid task ID: {task_id}")
+    proc = _active_tasks[task_id]
+    try:
+        import psutil
+        try:
+            p = psutil.Process(proc.pid)
+            for child in p.children(recursive=True):
+                child.kill()
+        except psutil.NoSuchProcess:
+            pass
+        proc.kill()
+        return _build_response("ok", "Task killed")
+    except Exception as e:
+        return _build_error_response(str(e))
 
 
 

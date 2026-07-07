@@ -23,6 +23,9 @@ from src.tools.coding_tools import create_files as _create_files
 from src.tools.coding_tools import modify_files as _modify_files
 
 from src.tools.coding_tools import run_safe_commands as _run_safe_commands
+from src.tools.coding_tools import check_task_status as _check_task_status
+from src.tools.coding_tools import send_task_input as _send_task_input
+from src.tools.coding_tools import kill_task as _kill_task
 
 from src.tools.coding_tools import delete_file as _delete_file
 
@@ -79,19 +82,7 @@ Hard rules:
 - If blocked by HITL, queue the change and continue tool-calling behavior as instructed; do not claim you lack access.
 """
 
-PHASE_PROMPTS = {
-    "PLANNING": """=== PHASE 1: PLANNING ===
-Analyze the repository/workspace structure first. Use list_files, read_files, search_code, and repository-aware tools. Output a concrete implementation plan: which files to create/modify and what logic each will contain. Do not write files yet.""",
 
-    "EXECUTION": """=== PHASE 2: EXECUTION ===
-Implement the plan. Create or modify files with complete, working code. Prefer patch workflows when practical. Follow the project's existing configurations and dependency layout.""",
-
-    "VERIFICATION": """=== PHASE 3: VERIFICATION ===
-You MUST verify before finishing. Run safe validation commands:
-- Python: python -m py_compile <file> and pytest <test_file>
-- Frontend/nested React: npm --prefix <subdir> install && npm --prefix <subdir> run build
-Do not exit while build/test output shows errors. Fix them immediately.""",
-}
 
 FINAL_RESPONSE_FORMAT = """
 Your final text response when finishing MUST use these exact headers:
@@ -181,15 +172,41 @@ def modify_files(filepath: str, target_code: str, replacement_code: str) -> str:
 
     return res
 
+@tool
+def multi_replace_file_content(filepath: str, chunks: list) -> str:
+    """Replace multiple specific line ranges with replacement content.
+    chunks should be a list of dicts, each with keys: StartLine, EndLine, TargetContent, ReplacementContent.
+    Use this for high-fidelity code editing to avoid fuzzy matching errors."""
+    from src.tools.coding_tools import _multi_replace_file_content
+    res = _multi_replace_file_content(filepath, chunks)
+    if res.startswith("Success:"):
+        try:
+            get_retrieval_service().sync_index()
+        except Exception as e:
+            logger.warning(f"Failed to sync code index after file modification: {e}")
+    return res
+
 
 
 @tool
+def run_safe_commands(command: str, background: bool = False) -> str:
+    """Executes a shell command (like pytest, npm run test) in the './workspace' folder to compile/test code. Set background=True for servers or long builds."""
+    return _run_safe_commands(command, background)
 
-def run_safe_commands(command: str) -> str:
+@tool
+def check_task_status(task_id: str) -> str:
+    """Check the status and recent output of a background task."""
+    return _check_task_status(task_id)
 
-    """Executes a shell command (like pytest, npm run test) in the './workspace' folder to compile/test code."""
+@tool
+def send_task_input(task_id: str, text: str) -> str:
+    """Send input to a background task."""
+    return _send_task_input(task_id, text)
 
-    return _run_safe_commands(command)
+@tool
+def kill_task(task_id: str) -> str:
+    """Kill a background task."""
+    return _kill_task(task_id)
 
 
 
@@ -676,13 +693,14 @@ tools_map = {
     "search_code": search_code,
 
     "create_files": create_files,
-
     "modify_files": modify_files,
-
+    "multi_replace_file_content": multi_replace_file_content,
     "list_files": list_files,
 
     "run_safe_commands": run_safe_commands,
-
+    "check_task_status": check_task_status,
+    "send_task_input": send_task_input,
+    "kill_task": kill_task,
     "get_repository_structure": get_repository_structure,
 
     "search_symbols": search_symbols,
@@ -752,9 +770,7 @@ def get_coding_model(task: str = ""):
         logger.info(f"Binding all {len(tools)} tools to coding worker (complex query detected).")
 
     else:
-
-        active_tools = [read_files, search_code, create_files, modify_files, list_files, run_safe_commands, delete_file, estimate_tokens, get_token_budget_remaining, fetch_file_headers, summarize_tool_output]
-
+        active_tools = [read_files, search_code, create_files, modify_files, multi_replace_file_content, list_files, run_safe_commands, check_task_status, send_task_input, kill_task, delete_file, estimate_tokens, get_token_budget_remaining, fetch_file_headers, summarize_tool_output]
     
 
     provider = resolve_provider("coding_worker", "primary")
@@ -1529,67 +1545,18 @@ def coding_worker_node(state: dict) -> dict:
 
     
 
-    current_phase = state.get("coding_worker_phase", "PLANNING")
-
     code_modified = state.get("code_modified", False)
-
     created_files_this_run = []
 
-
     while step < max_steps:
-
         step += 1
-
-        print(f"[CODING WORKER] Step {step}/{max_steps} [Phase: {current_phase}]")
+        print(f"[CODING WORKER] Step {step}/{max_steps}")
 
         
 
         # Inject Phase Prompts dynamically
 
-        if step == 1 and current_phase == "PLANNING":
-
-            agent_messages.append(
-
-                SystemMessage(
-
-                    content=PHASE_PROMPTS["PLANNING"]
-
-                )
-
-            )
-
-        elif step == 3 and current_phase == "PLANNING":
-
-            current_phase = "EXECUTION"
-
-            agent_messages.append(
-
-                SystemMessage(
-
-                    content=PHASE_PROMPTS["EXECUTION"]
-
-                )
-
-            )
-
-        elif step == 6 and current_phase == "EXECUTION":
-
-            current_phase = "VERIFICATION"
-
-            agent_messages.append(
-
-                SystemMessage(
-
-                    content=PHASE_PROMPTS["VERIFICATION"]
-
-                )
-
-            )
-
-        
-
         try:
-
             response = model.invoke(agent_messages)
 
         except Exception as e:
@@ -1615,48 +1582,11 @@ def coding_worker_node(state: dict) -> dict:
             
 
         # If no tool calls are generated, the model has finished the task
-
         if not tool_calls:
-
-            if code_modified and current_phase != "VERIFICATION":
-
-                current_phase = "VERIFICATION"
-
-                print("  No tool calls generated, but verification is required. Forcing verification phase.")
-
-                agent_messages.append(
-
-                    SystemMessage(
-
-                        content=(
-
-                            "=== MANDATORY VERIFICATION REQUIRED ===\n"
-
-                            "You are attempting to finish the task. However, since you have modified files in the codebase, "
-
-                            "you MUST first run validation checks (e.g., python -m py_compile for python files, npm run build "
-
-                            "for react frontends, or run tests) using run_safe_commands to ensure your changes are correct and build successfully. "
-
-                            "Do not exit without verifying."
-
-                        )
-
-                    )
-
-                )
-
-                continue
-
-            else:
-
-                print("  No tool calls generated. Finishing.")
-
-                final_explanation = response.content
-
-                broken_out = True
-
-                break
+            print("  No tool calls generated. Finishing.")
+            final_explanation = response.content
+            broken_out = True
+            break
 
                     
 
@@ -1691,27 +1621,6 @@ def coding_worker_node(state: dict) -> dict:
             
 
             if tool_name in ["create_files", "modify_files", "delete_file"]:
-
-                if current_phase == "PLANNING":
-
-                    print(f"  [BLOCKED] Tool '{tool_name}' blocked during PLANNING phase.")
-
-                    obs = (
-
-                        "Error: You are in the PLANNING phase. You must first analyze the workspace structure and existing files, "
-
-                        "and output your implementation plan. Do not create/modify/delete files yet."
-
-                    )
-
-                    execution_message = ToolMessage(content=obs, tool_call_id=tool_id, name=tool_name)
-
-                    agent_messages.append(execution_message)
-
-                    continue
-
-                    
-
                 filepath = tool_args.get("filepath", "")
 
                 
@@ -2033,8 +1942,6 @@ def coding_worker_node(state: dict) -> dict:
         "coding_worker_resume_tool_call_id": None,
 
         "patch_is_verified": False,
-
-        "coding_worker_phase": "PLANNING",
 
         "code_modified": False,
 

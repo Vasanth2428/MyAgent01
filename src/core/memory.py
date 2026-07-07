@@ -65,9 +65,7 @@ class ConversationMemory:
         via deterministic key generation.
         """
         self._turn_counter += 1
-        # Deterministic key: role + hash of text prevents storing exact duplicates
-        import hashlib
-        key = f"{role}_{hashlib.md5(text.encode()).hexdigest()[:12]}"
+        key = f"{role}_{self._turn_counter}"
         
         # Precalculate tokens
         tokens = _count_line_tokens(role, text)
@@ -113,8 +111,7 @@ class ConversationMemory:
             # Map new entries to their keys
             new_keys = {}
             for entry in value:
-                import hashlib
-                key = f"{entry.role}_{hashlib.md5(entry.text.encode()).hexdigest()[:12]}"
+                key = f"{entry.role}_{entry.turn_count}"
                 new_keys[key] = entry
 
             # Delete keys that are not in the new entries

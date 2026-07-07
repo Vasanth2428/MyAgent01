@@ -1,7 +1,9 @@
 # Build and compile the multi-agent workflow.
 import os
 import logging
+from typing import Union, List
 from langgraph.graph import StateGraph, END
+from langgraph.constants import Send
 from langgraph.store.memory import InMemoryStore
 from src.graph.worker_output_cache import store_worker_output
 
@@ -22,7 +24,7 @@ from src.agents.code_critic_worker import code_critic_worker_node
 MAX_RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", "50"))
 
 
-def route_based_on_next_agent(state: dict) -> str:
+def route_based_on_next_agent(state: dict) -> Union[str, List[Send]]:
 
     if state.get("waiting_for_approval"):
         logger.info("Workflow paused: pending human approval for file operation.")
@@ -48,6 +50,10 @@ def route_based_on_next_agent(state: dict) -> str:
     elif next_agent == "report_worker":
         return "report_worker_node"
     elif next_agent == "coding_worker":
+        parallel_tasks = state.get("parallel_tasks") or []
+        if len(parallel_tasks) > 1:
+            # Map multiple tasks onto parallel workers using Send
+            return [Send("coding_worker_node", {"current_task": task, "parallel_tasks": []}) for task in parallel_tasks]
         return "coding_worker_node"
     elif next_agent == "code_critic_worker":
         return "code_critic_worker_node"
