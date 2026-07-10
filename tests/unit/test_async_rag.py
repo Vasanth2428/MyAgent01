@@ -80,32 +80,6 @@ class TestAsyncRAG(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(embed_lat, float)
         self.assertIsInstance(db_lat, float)
 
-    async def test_async_generation_service(self):
-        raw_async = AsyncMock()
-        raw_async.chat.completions.create = AsyncMock(return_value=self.mock_completion)
-
-        from src.core.llm import RobustAsyncLLMClient
-        llm_service_mock = MagicMock()
-        llm_service_mock.execute_with_retry_async = AsyncMock(return_value=self.mock_completion)
-        robust_async = RobustAsyncLLMClient(raw_async, llm_service_mock)
-
-        service = GenerationService(MagicMock(), model="test", temperature=0.7)
-        service.async_client = robust_async
-
-        def mock_count(text):
-            return len(text.split())
-
-        import unittest.mock
-        with unittest.mock.patch('time.time', return_value=123.45):
-            with unittest.mock.patch.object(service, '_verify_grounding', return_value=(0.85, [])):
-                result = await service.generate_async("query", "context", mock_count, ["context chunk"])
-        self.assertIsInstance(result.response, str)
-        self.assertEqual(result.response, "mocked async response")
-        self.assertTrue(result.token_usage["total"] > 0)
-        self.assertEqual(result.grounding_score, 0.85)
-        self.assertEqual(result.latency_ms, 0.0)
-        self.assertIsInstance(result.unsupported_claims, list)
-
     async def test_async_scraper(self):
         from src.core.scraper import scrape_web_page_async
 

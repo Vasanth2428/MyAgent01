@@ -19,8 +19,23 @@ def main():
     checkpointer = setup_checkpointer()
     graph = build_multi_agent_graph(checkpointer)
     
-    # Simple query
-    query = "Create a full stack website for a prestigious university (University of Advanced Sciences). It must be at the level of an actual premium college website, including admissions, academics, campus life, and an admin dashboard. Use a Node.js Express backend and a React frontend. Place it in `./workspace/college_website`."
+    # Detailed prompt for a rigorous end-to-end fullstack test
+    query = """
+Build a truly functional, production-ready Fullstack AI Dashboard Platform.
+You must strictly build this inside `./workspace/ai_dashboard`.
+
+Requirements:
+1. Frontend: React + Vite + TailwindCSS. Create a stunning, highly responsive UI with glassmorphism, animated charts, and dark mode.
+2. Backend: Node.js + Express API (or FastAPI if you prefer Python).
+3. Data: Implement a robust mock database (JSON/memory) tracking realtime metrics for 5 AI models.
+4. Core Features:
+   - A dynamic dashboard layout with a sidebar and top navigation.
+   - Live metrics (Latency, Tokens/sec, Cost) fetched from the backend API.
+   - A "Model Settings" page that updates the backend configuration.
+5. Automated Validation: You MUST write a unit test suite for the backend API and ensure it passes successfully via the Headless Critic.
+
+Execute this end-to-end. Do not stop until the application is fully functional, styled, and validated.
+"""
     config = get_graph_config(f"live_build_{int(time.time())}")
     
     from src.graph.state_2pipeline import create_initial_state

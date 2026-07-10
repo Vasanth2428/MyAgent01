@@ -138,36 +138,41 @@ class WeaviateRetriever:
         self.code_collection = None
 
         if self.client and self._connected:
-            if not self.client.collections.exists("RAGKnowledge"):
-                logger.info("Initializing 'RAGKnowledge' collection with text2vec-huggingface...")
-                self.client.collections.create(
-                    name="RAGKnowledge",
-                    vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_huggingface(
-                        model="sentence-transformers/all-MiniLM-L6-v2",
-                        vectorize_collection_name=False,
-                    ),
-                    vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
-                    properties=[
-                        wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
-                        wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
-                        wvc.config.Property(name="source", data_type=wvc.config.DataType.TEXT),
-                        wvc.config.Property(name="content_hash", data_type=wvc.config.DataType.TEXT),
-                        wvc.config.Property(name="upload_timestamp", data_type=wvc.config.DataType.NUMBER),
-                        wvc.config.Property(name="document_id", data_type=wvc.config.DataType.TEXT),
-                        wvc.config.Property(name="symbol_name", data_type=wvc.config.DataType.TEXT),
-                        wvc.config.Property(name="symbol_type", data_type=wvc.config.DataType.TEXT),
-                        wvc.config.Property(name="filepath", data_type=wvc.config.DataType.TEXT),
-                        wvc.config.Property(name="start_line", data_type=wvc.config.DataType.NUMBER),
-                        wvc.config.Property(name="end_line", data_type=wvc.config.DataType.NUMBER),
-                        wvc.config.Property(name="is_code", data_type=wvc.config.DataType.BOOL),
-                    ]
-                )
+            try:
+                if not self.client.collections.exists("RAGKnowledge"):
+                    logger.info("Initializing 'RAGKnowledge' collection with text2vec-huggingface...")
+                    self.client.collections.create(
+                        name="RAGKnowledge",
+                        vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_huggingface(
+                            model="sentence-transformers/all-MiniLM-L6-v2",
+                            vectorize_collection_name=False,
+                        ),
+                        vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                        properties=[
+                            wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
+                            wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
+                            wvc.config.Property(name="source", data_type=wvc.config.DataType.TEXT),
+                            wvc.config.Property(name="content_hash", data_type=wvc.config.DataType.TEXT),
+                            wvc.config.Property(name="upload_timestamp", data_type=wvc.config.DataType.NUMBER),
+                            wvc.config.Property(name="document_id", data_type=wvc.config.DataType.TEXT),
+                            wvc.config.Property(name="symbol_name", data_type=wvc.config.DataType.TEXT),
+                            wvc.config.Property(name="symbol_type", data_type=wvc.config.DataType.TEXT),
+                            wvc.config.Property(name="filepath", data_type=wvc.config.DataType.TEXT),
+                            wvc.config.Property(name="start_line", data_type=wvc.config.DataType.NUMBER),
+                            wvc.config.Property(name="end_line", data_type=wvc.config.DataType.NUMBER),
+                            wvc.config.Property(name="is_code", data_type=wvc.config.DataType.BOOL),
+                        ]
+                    )
 
-            self.collection = self.client.collections.get("RAGKnowledge")
-            if self.client.collections.exists("RAGCode"):
-                self.code_collection = self.client.collections.get("RAGCode")
-            else:
-                self.code_collection = self.collection  # Fallback to RAGKnowledge if RAGCode doesn't exist
+                self.collection = self.client.collections.get("RAGKnowledge")
+                if self.client.collections.exists("RAGCode"):
+                    self.code_collection = self.client.collections.get("RAGCode")
+                else:
+                    self.code_collection = self.collection  # Fallback to RAGKnowledge if RAGCode doesn't exist
+            except Exception as e:
+                logger.error(f"Failed to initialize Weaviate collections: {e}")
+                self._connected = False
+                logger.warning("Falling back to degraded mode.")
 
         self.local_docs = []
         self.local_code_chunks = []

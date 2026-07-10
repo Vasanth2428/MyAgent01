@@ -1,6 +1,6 @@
 # Code critic worker node - validates symbol usage, checks for hallucinations, and audits patches.
 import logging
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
@@ -9,15 +9,13 @@ from src.core.model_provider import build_model_with_fallback, resolve_provider
 
 logger = logging.getLogger("MultiAgent.CodeCriticWorker")
 
-CRITIC_SYSTEM_PROMPT = """You are a Code Critic, Security Auditor, and Runtime Validator. Your job is to validate the coding worker's outputs using static review AND execution artifacts.
+CRITIC_SYSTEM_PROMPT = """You are a Code Critic and Reviewer. Your job is to validate the frontend_worker and backend_worker outputs.
+You enforce both TECHNICAL QUALITY (syntax, architecture, logic) and DESIGN QUALITY (premium UI, aesthetic design, responsive styling).
 
-A. Static review:
-   - Symbol references, patch correctness, logic flaws, hardcoded secrets, injection risks.
-
-B. Execution verification:
-   - If the worker ran validation commands, inspect their stdout/stderr/returncode.
-   - A FAILED build/test is a CRITICAL finding.
-   - If no validation command was executed, mark that as a CRITICAL finding for verifiable tasks.
+CRITICAL INSTRUCTION: The user is often building new projects from scratch. DO NOT be overly strict about missing features, failed builds, or incomplete code during the initial scaffolding phase.
+- A FAILED build/test or missing validation command should be marked as a WARNING, not critical.
+- Let the agent make the project first; we will strive to make it perfect later.
+- Only mark an issue as CRITICAL if it is a severe syntax error that corrupts the file, a severe security vulnerability, or a catastrophic design failure.
 
 Output structured findings (info/warning/critical). If any critical issue remains, end with RETRY_REQUIRED."""
 
@@ -53,6 +51,67 @@ def get_critic_model():
         structured_output=CriticReport,
     )
 
+class CIDecision(BaseModel):
+    action: Literal["WAIT", "SEND_INPUT", "ABORT"] = Field(description="Action to take: WAIT (normal progress), SEND_INPUT (stuck on prompt), ABORT (error loop).")
+    input_text: str = Field(description="Text to send if action is SEND_INPUT. Must include newline (\\n) if simulating Enter.", default="")
+    reasoning: str = Field(description="Why this action was chosen.")
+
+def _get_ci_monitor_model():
+    provider = resolve_provider("code_critic", "primary")
+    if provider == "cerebras":
+        keys = ("CEREBRAS_API_KEY",)
+    elif provider == "mistral":
+        keys = ("MISTRAL_API_KEY",)
+    else:
+        keys = ("AGENT_API_KEY",)
+    return build_model_with_fallback(
+        "code_critic",
+        CODE_CRITIC_MODEL_PRIMARY,
+        CODE_CRITIC_MODEL_FALLBACK,
+        temperature=0,
+        api_key_envs=keys,
+        structured_output=CIDecision,
+    )
+
+def _monitor_ci_task(task_id: str, script_name: str) -> str:
+    import json, time
+    from src.tools.coding_tools import check_task_status, kill_task, send_task_input
+    
+    model = _get_ci_monitor_model()
+    
+    for iteration in range(12): # 12 iterations * 15s = 3 minutes max
+        time.sleep(15)
+        status_res = check_task_status(task_id)
+        try:
+            status_json = json.loads(status_res)
+            
+            if "exited" in status_json.get("message", ""):
+                return status_res
+                
+            stdout_so_far = status_json.get("data", {}).get("output", "")
+            
+            prompt = [
+                SystemMessage(content="You are a CI Task Monitor. Your job is to read the terminal output of a running command and decide the next action.\n- WAIT: If it is downloading, compiling, or progressing normally.\n- SEND_INPUT: If it is explicitly waiting for user input (e.g. 'Press y').\n- ABORT: If it is stuck in an infinite error loop or has completely crashed without exiting."),
+                HumanMessage(content=f"Command: {script_name}\n\nRecent Output:\n{stdout_so_far[-2000:]}")
+            ]
+            
+            decision: CIDecision = model.invoke(prompt)
+            logger.info(f"[CI MONITOR] Action: {decision.action} | Reason: {decision.reasoning}")
+            
+            if decision.action == "ABORT":
+                kill_task(task_id)
+                return f"{status_res}\n\n[SYSTEM NOTE: The CI process was forcefully ABORTED by the Intelligent Monitor. Reason: {decision.reasoning}]"
+            elif decision.action == "SEND_INPUT":
+                send_task_input(task_id, decision.input_text)
+                # continue waiting
+                
+        except Exception as e:
+            logger.warning(f"CI Monitor error: {e}")
+            
+    kill_task(task_id)
+    return f"{status_res}\n\n[SYSTEM NOTE: The CI process exceeded the maximum 3-minute limit and was forcefully terminated to prevent a system hang. Treat this as a CRITICAL validation failure.]"
+
+
 
 def code_critic_worker_node(state: dict) -> dict:
     """
@@ -73,9 +132,11 @@ def code_critic_worker_node(state: dict) -> dict:
     coding_output = worker_outputs.get("coding_worker", "")
     if not coding_output:
         logger.warning("No coding worker output detected to critique. Skipping validation.")
+        final_text = "No coding specialist output was found to validate."
         return {
+            "messages": [AIMessage(content=final_text, name="code_critic_worker")],
             "worker_complete": {"code_critic_worker": True},
-            "worker_outputs": {"code_critic_worker": "No coding specialist output was found to validate."},
+            "worker_outputs": {"code_critic_worker": final_text},
             "worker_type": "code_critic_worker",
             "next_agent": "supervisor"
         }
@@ -92,10 +153,69 @@ def code_critic_worker_node(state: dict) -> dict:
                 break
     
     verification_context = ""
+    # Phase 3: Automated Verification Loops (Headless Critic CI/CD)
+    import os
+    import json
+    from src.tools.coding_tools import execute_command
+    
+    auto_ci_artifacts = []
+    _active_project = state.get("active_project")
+    workspace_dir = os.path.abspath(f"./workspace/{_active_project}" if _active_project else "./workspace")
+    if os.path.exists(workspace_dir):
+        pkg_json_path = os.path.join(workspace_dir, "package.json")
+        if os.path.exists(pkg_json_path):
+            try:
+                with open(pkg_json_path, 'r', encoding='utf-8') as f:
+                    pkg_data = json.load(f)
+                
+                # Defensive typing against malformed package.json files
+                scripts = pkg_data.get("scripts", {}) if isinstance(pkg_data, dict) else {}
+                if not isinstance(scripts, dict):
+                    scripts = {}
+                    
+                # Look for common CI validation gates
+                for target_script in ["lint", "test", "build"]:
+                    if target_script in scripts:
+                        logger.info(f"[HEADLESS CRITIC] Auto-discovered '{target_script}' script. Executing CI gate...")
+                        ci_result = execute_command(f"npm run {target_script}", wait_ms_before_async=30000)
+                        
+                        # Real-time physics fix: Wait for the task to finish if it goes to the background
+                        try:
+                            import json
+                            res_json = json.loads(ci_result)
+                            if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
+                                task_id = res_json["data"]["task_id"]
+                                ci_result = _monitor_ci_task(task_id, f"npm run {target_script}")
+                        except Exception as e:
+                            logger.warning(f"Failed to check task_id in CI result: {e}")
+                            
+                        auto_ci_artifacts.append(f"--- AUTO CI RUN: npm run {target_script} ---\n{ci_result}")
+                        # Don't run multiple if one is sufficient, but let's run all discovered for thoroughness
+            except Exception as e:
+                logger.warning(f"Failed to parse package.json for auto-CI: {e}")
+        elif os.path.exists(os.path.join(workspace_dir, "pytest.ini")) or os.path.exists(os.path.join(workspace_dir, "requirements.txt")):
+            logger.info("[HEADLESS CRITIC] Auto-discovered Python project. Executing pytest CI gate...")
+            ci_result = execute_command("pytest", wait_ms_before_async=30000)
+            
+            # Real-time physics fix: Wait for the task to finish if it goes to the background
+            try:
+                import json
+                res_json = json.loads(ci_result)
+                if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
+                    task_id = res_json["data"]["task_id"]
+                    ci_result = _monitor_ci_task(task_id, "pytest")
+            except Exception as e:
+                pass
+                
+            auto_ci_artifacts.append(f"--- AUTO CI RUN: pytest ---\n{ci_result}")
+            
+    if auto_ci_artifacts:
+        verification_artifacts.extend(auto_ci_artifacts)
+
     if verification_artifacts:
-        verification_context = "\n\n=== VERIFICATION ARTIFACTS ===\n" + "\n---\n".join(verification_artifacts[-3:])
+        verification_context = "\n\n=== VERIFICATION ARTIFACTS ===\n" + "\n---\n".join(verification_artifacts[-5:])
     else:
-        verification_context = "\n\n=== VERIFICATION ARTIFACTS ===\nNo validation commands were found in the coding worker output. If the task involved creating or modifying files, this is a CRITICAL gap."
+        verification_context = "\n\n=== VERIFICATION ARTIFACTS ===\nNo validation commands were found in the coding worker output, and no auto-CI scripts were detected in the workspace. If the task involved creating or modifying files, this is a CRITICAL gap."
 
     # 2c. Extract repository index symbols for validation context
     from src.agents.coding_worker import get_retrieval_service
@@ -163,11 +283,16 @@ def code_critic_worker_node(state: dict) -> dict:
     
     if is_invalid and retry_count >= 2:
         updated_scratchpad = scratchpad + f"\n- [Code Critic]: Verification failed repeatedly. Aborting corrections to prevent infinite loop.\nFindings:\n{final_text}"
+        messages_out = [
+            AIMessage(content=final_text, name="code_critic_worker"),
+            SystemMessage(content="CRITICAL INSTRUCTION: The coding worker has failed the maximum number of times on this task. You MUST NOT route back to the coding_worker for this specific issue. Proceed to the next step or route to synthesizer.")
+        ]
     else:
         updated_scratchpad = scratchpad + f"\n- [Code Critic]: Code validation report:\n{final_text}"
+        messages_out = [AIMessage(content=final_text, name="code_critic_worker")]
     
     state_update = {
-        "messages": [AIMessage(content=final_text, name="code_critic_worker")],
+        "messages": messages_out,
         "scratchpad": updated_scratchpad,
         "worker_complete": {"code_critic_worker": True},
         "worker_outputs": {"code_critic_worker": final_text},

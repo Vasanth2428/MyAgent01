@@ -18,7 +18,8 @@ from src.graph.synthesizer import synthesizer_node
 from src.agents.scraper_worker import scraper_worker_node
 from src.agents.critic_worker import critic_worker_node
 from src.agents.report_worker import report_worker_node
-from src.agents.coding_worker import coding_worker_node
+from src.agents.frontend_worker import frontend_worker_node
+from src.agents.backend_worker import backend_worker_node
 from src.agents.code_critic_worker import code_critic_worker_node
 
 MAX_RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", "50"))
@@ -49,12 +50,10 @@ def route_based_on_next_agent(state: dict) -> Union[str, List[Send]]:
         return "critic_worker_node"
     elif next_agent == "report_worker":
         return "report_worker_node"
-    elif next_agent == "coding_worker":
-        parallel_tasks = state.get("parallel_tasks") or []
-        if len(parallel_tasks) > 1:
-            # Map multiple tasks onto parallel workers using Send
-            return [Send("coding_worker_node", {"current_task": task, "parallel_tasks": []}) for task in parallel_tasks]
-        return "coding_worker_node"
+    elif next_agent == "frontend_worker":
+        return "frontend_worker_node"
+    elif next_agent == "backend_worker":
+        return "backend_worker_node"
     elif next_agent == "code_critic_worker":
         return "code_critic_worker_node"
     elif next_agent == "synthesizer":
@@ -124,7 +123,8 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_node("scraper_worker_node", scraper_worker_node)
     workflow.add_node("critic_worker_node", critic_worker_node)
     workflow.add_node("report_worker_node", report_worker_node)
-    workflow.add_node("coding_worker_node", coding_worker_node)
+    workflow.add_node("frontend_worker_node", frontend_worker_node)
+    workflow.add_node("backend_worker_node", backend_worker_node)
     workflow.add_node("code_critic_worker_node", code_critic_worker_node)
     workflow.add_node("synthesizer_node", synthesizer_node)
     workflow.add_node("aggregate_parallel_results_node", aggregate_parallel_results_node)
@@ -143,7 +143,8 @@ def build_multi_agent_graph(checkpointer=None):
             "scraper_worker_node": "scraper_worker_node",
             "critic_worker_node": "critic_worker_node",
             "report_worker_node": "report_worker_node",
-            "coding_worker_node": "coding_worker_node",
+            "frontend_worker_node": "frontend_worker_node",
+            "backend_worker_node": "backend_worker_node",
             "code_critic_worker_node": "code_critic_worker_node",
             "synthesizer_node": "synthesizer_node",
             END: END,
@@ -157,9 +158,18 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_edge("critic_worker_node", "aggregate_parallel_results_node")
     workflow.add_edge("report_worker_node", "aggregate_parallel_results_node")
 
-    # After coding worker execution, decide next step based on approval state
+    # After frontend/backend worker execution, decide next step based on approval state
     workflow.add_conditional_edges(
-        "coding_worker_node",
+        "frontend_worker_node",
+        route_after_coding_worker,
+        {
+            "code_critic_worker_node": "code_critic_worker_node",
+            "supervisor_node": "supervisor_node",
+            END: END,
+        },
+    )
+    workflow.add_conditional_edges(
+        "backend_worker_node",
         route_after_coding_worker,
         {
             "code_critic_worker_node": "code_critic_worker_node",
@@ -169,7 +179,25 @@ def build_multi_agent_graph(checkpointer=None):
     )
 
     workflow.add_edge("code_critic_worker_node", "aggregate_parallel_results_node")
-    workflow.add_edge("aggregate_parallel_results_node", "supervisor_node")
+    
+    def route_after_aggregation(state: dict) -> str:
+        next_agt = state.get("next_agent", "supervisor")
+        if next_agt == "frontend_worker":
+            return "frontend_worker_node"
+        elif next_agt == "backend_worker":
+            return "backend_worker_node"
+        return "supervisor_node"
+        
+    workflow.add_conditional_edges(
+        "aggregate_parallel_results_node",
+        route_after_aggregation,
+        {
+            "supervisor_node": "supervisor_node",
+            "frontend_worker_node": "frontend_worker_node",
+            "backend_worker_node": "backend_worker_node",
+        }
+    )
+    
     workflow.add_edge("synthesizer_node", END)
 
     if checkpointer is None:

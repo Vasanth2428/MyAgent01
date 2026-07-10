@@ -85,12 +85,19 @@
             <div class="ide-sidebar-panel active" id="panel-explorer">
                 <div class="panel-header">
                     <span>Workspace Explorer</span>
-                    <button type="button" id="refresh-explorer-btn" title="Refresh Files">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px;">
-                            <polyline points="23 4 23 10 17 10"/>
-                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                        </svg>
-                    </button>
+                    <div style="display: flex; gap: 4px;">
+                        <button type="button" id="browse-workspace-btn" title="Browse Device for Workspace" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center;">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px;">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                            </svg>
+                        </button>
+                        <button type="button" id="refresh-explorer-btn" title="Refresh Files" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center;">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px;">
+                                <polyline points="23 4 23 10 17 10"/>
+                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="explorer-tree" id="explorer-tree">
                     <div class="loading-placeholder">Loading workspace files...</div>

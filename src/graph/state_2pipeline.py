@@ -12,12 +12,17 @@ def add_messages(left: List[BaseMessage], right: List[BaseMessage]) -> List[Base
         right = []
     return left + right
 
+def update_next_agent(left: str, right: str) -> str:
+    """Reducer for next_agent to avoid InvalidUpdateError during parallel execution."""
+    if right == "supervisor" and left and left != "supervisor":
+        return left # prioritize retry loops over generic supervisor return
+    return right if right else left
 
 # Lightweight state schema - minimal tracking, relies on message history
 class AgentState(TypedDict):
     session_id: str
     messages: Annotated[List[BaseMessage], add_messages]
-    next_agent: str
+    next_agent: Annotated[str, update_next_agent]
     current_task: str
     parallel_tasks: List[str]
     steps_remaining: int
@@ -47,6 +52,20 @@ class AgentState(TypedDict):
     patch_is_verified: bool
     active_project: Optional[str]
     final_answer: str
+    
+    # Missing fields for worker coordination
+    worker_outputs: dict
+    worker_complete: dict
+    worker_type: str
+    scratchpad: str
+    scratchpad_references: List[str]
+    worker_output_ids: dict
+    worker_output_summaries: dict
+    task_hashes: List[str]
+    file_status_flags: dict
+    pending_file_approvals: dict
+    created_files: List[str]
+    code_modified: bool
 
 
 def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False) -> dict:
@@ -76,5 +95,17 @@ def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False)
         "coding_worker_resume_tool_call_id": None,
         "patch_is_verified": False,
         "active_project": None,
-        "retry_counter": 0
+        "retry_counter": 0,
+        "worker_outputs": {},
+        "worker_complete": {},
+        "worker_type": "",
+        "scratchpad": "",
+        "scratchpad_references": [],
+        "worker_output_ids": {},
+        "worker_output_summaries": {},
+        "task_hashes": [],
+        "file_status_flags": {},
+        "pending_file_approvals": {},
+        "created_files": [],
+        "code_modified": False
     }

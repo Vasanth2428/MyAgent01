@@ -5,7 +5,7 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from src.core.config import REPORT_WORKER_MODEL_PRIMARY, REPORT_WORKER_MODEL_FALLBACK
-from src.core.model_provider import build_model_with_fallback, resolve_provider
+from src.core.model_provider import build_model_with_fallback, resolve_provider, message_text
 
 logger = logging.getLogger("MultiAgent.ReportWorker")
 

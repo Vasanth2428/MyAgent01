@@ -65,16 +65,17 @@ def test_contextvars_nested_set_does_not_leak():
     assert active_model_provider.get() == "outer"
     assert active_model_name.get() == "outer_model"
 
-    token_inner = active_model_provider.set("inner")
-    active_model_name.set("inner_model")
+    token_inner_provider = active_model_provider.set("inner")
+    token_inner_name = active_model_name.set("inner_model")
     assert active_model_provider.get() == "inner"
     assert active_model_name.get() == "inner_model"
 
-    active_model_provider.reset(token_inner)
-    active_model_name.reset(token_outer_name)
+    active_model_provider.reset(token_inner_provider)
+    active_model_name.reset(token_inner_name)
     assert active_model_provider.get() == "outer"
     assert active_model_name.get() == "outer_model"
 
     active_model_provider.reset(token_outer_provider)
+    active_model_name.reset(token_outer_name)
     assert active_model_provider.get() is None
     assert active_model_name.get() is None

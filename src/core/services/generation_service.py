@@ -15,9 +15,12 @@ import time
 import logging
 import asyncio
 import threading
-from typing import Dict, Tuple, Generator, AsyncGenerator, List, Optional
+from typing import Dict, Tuple, Generator, AsyncGenerator, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from src.core.config import LLM_MODEL, LLM_TEMPERATURE, CONTEXT_WINDOW_LIMIT
+
+if TYPE_CHECKING:
+    from src.core.services.grounding_service import GroundingVerifier
 
 logger = logging.getLogger("RAG.Services.Generation")
 
@@ -64,13 +67,25 @@ class GenerationService:
     _grounding_verifier: Optional["GroundingVerifier"] = None
     _verifier_lock = threading.Lock()
 
-    def __init__(self, client, model: str = LLM_MODEL, temperature: float = LLM_TEMPERATURE):
-        self.client = client
+    def __init__(self, client=None, model: str = LLM_MODEL, temperature: float = LLM_TEMPERATURE):
         self.model = model
         self.temperature = temperature
-        self.async_client = getattr(client, "llm_service", None)
-        if self.async_client:
-            self.async_client = self.async_client.async_client
+        from src.core.model_provider import build_chat_model, resolve_provider
+        
+        provider = resolve_provider("generation", "primary")
+        if provider == "cerebras":
+            keys = ("CEREBRAS_API_KEY",)
+        elif provider == "mistral":
+            keys = ("MISTRAL_API_KEY",)
+        else:
+            keys = ("AGENT_API_KEY",)
+            
+        self.langchain_model = build_chat_model(
+            "generation",
+            self.model,
+            temperature=self.temperature,
+            api_key_envs=keys
+        )
 
     @classmethod
     def _get_grounding_verifier(cls) -> "GroundingVerifier":
@@ -109,19 +124,19 @@ class GenerationService:
         response = ""
 
         try:
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature
-            )
-            response = completion.choices[0].message.content
-            if hasattr(completion, 'usage') and completion.usage:
+            from langchain_core.messages import HumanMessage
+            result = self.langchain_model.invoke([HumanMessage(content=prompt)])
+            response = result.content
+            
+            if hasattr(result, 'response_metadata') and 'token_usage' in result.response_metadata:
+                usage = result.response_metadata['token_usage']
                 exact_tokens = {
-                    "prompt": completion.usage.prompt_tokens,
-                    "completion": completion.usage.completion_tokens,
-                    "total": completion.usage.total_tokens
+                    "prompt": usage.get("prompt_tokens", 0),
+                    "completion": usage.get("completion_tokens", 0),
+                    "total": usage.get("total_tokens", 0)
                 }
                 ctx_used_pct = round((exact_tokens["prompt"] / CONTEXT_WINDOW_LIMIT) * 100, 2)
+                
             verifier = self._get_grounding_verifier()
             grounding_score, unsupported_claims = verifier.verify_grounding(response, context_chunks or [final_context])
             logger.info(f" -> Tokens used: {exact_tokens['total']}, grounding_score: {grounding_score:.3f}")
@@ -155,21 +170,20 @@ class GenerationService:
         unsupported_claims = []
         response = ""
 
-        client = self.async_client or self.client
         try:
-            completion = await client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature
-            )
-            response = completion.choices[0].message.content
-            if hasattr(completion, 'usage') and completion.usage:
+            from langchain_core.messages import HumanMessage
+            result = await self.langchain_model.ainvoke([HumanMessage(content=prompt)])
+            response = result.content
+            
+            if hasattr(result, 'response_metadata') and 'token_usage' in result.response_metadata:
+                usage = result.response_metadata['token_usage']
                 exact_tokens = {
-                    "prompt": completion.usage.prompt_tokens,
-                    "completion": completion.usage.completion_tokens,
-                    "total": completion.usage.total_tokens
+                    "prompt": usage.get("prompt_tokens", 0),
+                    "completion": usage.get("completion_tokens", 0),
+                    "total": usage.get("total_tokens", 0)
                 }
                 ctx_used_pct = round((exact_tokens["prompt"] / CONTEXT_WINDOW_LIMIT) * 100, 2)
+                
             grounding_score, unsupported_claims = await asyncio.to_thread(
                 self._verify_grounding, response, context_chunks or [final_context]
             )
@@ -193,16 +207,11 @@ class GenerationService:
         prompt = self.build_prompt(query, final_context)
         logger.info("[P6: GENERATION] Sending to Groq (Streaming)...")
         try:
-            stream = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature,
-                stream=True
-            )
+            from langchain_core.messages import HumanMessage
+            stream = self.langchain_model.stream([HumanMessage(content=prompt)])
             for chunk in stream:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield {"event": "answer_chunk", "text": content}
+                if chunk.content:
+                    yield {"event": "answer_chunk", "text": chunk.content}
         except Exception as e:
             logger.error(f"LLM Stream Error: {e}")
             yield {"event": "answer_chunk", "text": f"\n[LLM Error: {e}]"}
@@ -210,18 +219,12 @@ class GenerationService:
     async def generate_stream_async(self, query: str, final_context: str) -> AsyncGenerator[Dict, None]:
         prompt = self.build_prompt(query, final_context)
         logger.info("[P6: GENERATION] Sending to Groq (Async Streaming)...")
-        client = self.async_client or self.client
         try:
-            stream = await client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature,
-                stream=True
-            )
+            from langchain_core.messages import HumanMessage
+            stream = self.langchain_model.astream([HumanMessage(content=prompt)])
             async for chunk in stream:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield {"event": "answer_chunk", "text": content}
+                if chunk.content:
+                    yield {"event": "answer_chunk", "text": chunk.content}
         except Exception as e:
             logger.error(f"LLM Async Stream Error: {e}")
             yield {"event": "answer_chunk", "text": f"\n[LLM Async Error: {e}]"}

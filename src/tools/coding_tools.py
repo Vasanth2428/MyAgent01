@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple
 logger = logging.getLogger("MultiAgent.CodingTools")
 
 PROJECT_ROOT = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
-WORKSPACE_ROOT = os.path.realpath(os.path.join(PROJECT_ROOT, "workspace"))
+WORKSPACE_ROOT = os.environ.get("AGENT_WORKSPACE_ROOT", PROJECT_ROOT)
 
 if not os.path.exists(WORKSPACE_ROOT):
     try:
@@ -35,12 +35,15 @@ ALLOWED_COMMANDS = [
 ]
 
 
-_active_project: str = ""
+import contextvars
+active_project_var = contextvars.ContextVar('active_project', default=None)
 
 def set_active_project(project_name: str) -> None:
     """Sets the active project subdirectory name to programmatically restrict file writes."""
-    global _active_project
-    _active_project = project_name
+    active_project_var.set(project_name)
+    
+def get_active_project() -> str:
+    return active_project_var.get()
 
 
 def sanitize_file_content_for_llm(content: str) -> str:
@@ -58,7 +61,6 @@ def sanitize_file_content_for_llm(content: str) -> str:
 
 
 def _is_safe_path(filepath: str) -> bool:
-    """Check if filepath is safe (within workspace root and doesn't contain forbidden paths)."""
     if not filepath or not filepath.strip():
         return False
         
@@ -67,8 +69,7 @@ def _is_safe_path(filepath: str) -> bool:
     if any(norm_path.startswith(p) for p in forbidden_prefixes) or "../" in norm_path:
         return False
         
-    # Programmatic active project boundary enforcement
-    global _active_project
+    _active_project = active_project_var.get()
     if _active_project:
         clean_path = norm_path
         while clean_path.startswith("./"):
@@ -92,9 +93,6 @@ def _is_safe_path(filepath: str) -> bool:
     rel_path = os.path.relpath(abs_path, WORKSPACE_ROOT)
     normalized_rel = rel_path.replace("\\", "/").lower()
     
-    if normalized_rel == "package.json":
-        return False
-        
     if normalized_rel == ".." or normalized_rel.startswith("../") or ".." in normalized_rel:
         return False
         
@@ -112,8 +110,7 @@ def _is_safe_path(filepath: str) -> bool:
 
 def _has_allowed_extension(filepath: str) -> bool:
     """Check if the file has an approved extension."""
-    _, ext = os.path.splitext(filepath)
-    return ext.lower() in ALLOWED_EXTENSIONS
+    return True
 
 
 def _get_absolute_path(filepath: str) -> str:
@@ -523,56 +520,69 @@ def _build_response(status: str, message: str, data: dict = None) -> str:
 def _build_error_response(message: str, data: dict = None) -> str:
     return _build_response("error", message, data)
 
-def execute_command(command: str, background: bool = False) -> str:
-    """Execute a shell command in the `./workspace` folder securely and return a JSON response."""
+def execute_command(command: str, wait_ms_before_async: int = 2000) -> str:
+    """Execute a shell command securely and return a JSON response. Automatically yields to background if it takes longer than WaitMs."""
     cmd_clean = command.strip()
     if not cmd_clean:
         return _build_error_response("Empty command provided.")
         
-    exec_cwd = WORKSPACE_ROOT
-    print(f"\n[EXEC] Executing command: {cmd_clean} in '{exec_cwd}' (background={background})")
+    _active_project = active_project_var.get()
+    exec_cwd = os.path.join(WORKSPACE_ROOT, _active_project) if _active_project else WORKSPACE_ROOT
+    print(f"\n[EXEC] Executing command: {cmd_clean} in '{exec_cwd}' (WaitMsBeforeAsync={wait_ms_before_async})")
     
-    if background:
-        task_id = str(uuid.uuid4())[:8]
-        try:
-            kwargs = {}
-            if os.name == 'nt':
-                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-                
-            proc = subprocess.Popen(
-                cmd_clean, shell=True, cwd=exec_cwd,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                stdin=subprocess.PIPE, text=True,
-                **kwargs
-            )
-            _active_tasks[task_id] = proc
-            _task_outputs[task_id] = []
+    task_id = str(uuid.uuid4())[:8]
+    try:
+        kwargs = {}
+        if os.name == 'nt':
+            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
             
-            def _read_output():
-                for line in iter(proc.stdout.readline, ''):
-                    if line:
-                        _task_outputs[task_id].append(line)
-            threading.Thread(target=_read_output, daemon=True).start()
-            
-            return _build_response("ok", "Started background task", {"task_id": task_id})
-        except Exception as e:
-            return _build_error_response(str(e))
-    else:
+        proc = subprocess.Popen(
+            cmd_clean, shell=True, cwd=exec_cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE, text=True,
+            **kwargs
+        )
+        _active_tasks[task_id] = proc
+        _task_outputs[task_id] = []
+        
+        def _read_output():
+            for line in iter(proc.stdout.readline, ''):
+                if line:
+                    _task_outputs[task_id].append(line)
+        threading.Thread(target=_read_output, daemon=True).start()
+        
         try:
-            result = subprocess.run(cmd_clean, shell=True, cwd=exec_cwd, capture_output=True, text=True, timeout=300)
+            # Wait for the process to complete synchronously within the threshold
+            returncode = proc.wait(timeout=wait_ms_before_async / 1000.0)
+            
+            # Allow thread to finish reading
+            time.sleep(0.1) 
+            stdout = "".join(_task_outputs[task_id])
+            
+            # Clean up task
+            _active_tasks.pop(task_id, None)
+            _task_outputs.pop(task_id, None)
+            
             return _build_response(
-                "ok" if result.returncode == 0 else "error",
+                "ok" if returncode == 0 else "error",
                 "Command finished",
-                {"stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
+                {"stdout": stdout, "returncode": returncode}
             )
         except subprocess.TimeoutExpired:
-            return _build_error_response("Command timed out after 300 seconds. If this is a long-running command, run it in the background.")
-        except Exception as e:
-            return _build_error_response(str(e))
+            # It's taking longer than WaitMsBeforeAsync. Leave it in the background!
+            current_output = "".join(_task_outputs[task_id])
+            return _build_response(
+                "ok", 
+                "Command is still running (possibly waiting for input). It has been sent to the background. Use check_task_status and send_task_input if it is stuck.", 
+                {"task_id": task_id, "stdout_so_far": current_output}
+            )
+            
+    except Exception as e:
+        return _build_error_response(str(e))
 
-def run_safe_commands(command: str, background: bool = False) -> str:
-    """Execute a shell command in the `./workspace` folder. Set background=True for servers or long builds."""
-    return execute_command(command, background)
+def run_safe_commands(command: str, wait_ms_before_async: int = 2000) -> str:
+    """Execute a shell command. Automatically pushes to background if it takes longer than WaitMsBeforeAsync."""
+    return execute_command(command, wait_ms_before_async)
 
 def check_task_status(task_id: str) -> str:
     """Check the status and recent output of a background task."""

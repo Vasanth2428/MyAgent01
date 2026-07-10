@@ -48,7 +48,7 @@ def _restore_env_backup():
 _restore_env_backup()
 
 # --- LLM ---
-LLM_MODEL = "llama-3.1-8b-instant"
+LLM_MODEL = os.getenv("LLM_MODEL", "mistral-large-latest")
 LLM_TEMPERATURE = 0.1
 CONTEXT_WINDOW_LIMIT = 131072
 

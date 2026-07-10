@@ -2602,24 +2602,47 @@ AppState.updateContextLimit(parseInt(contextLimitSlider.value));
         }
     }
 
-    async function refreshExplorer() {
-        if (!explorerTreeNode) return;
-        const files = await fetchWorkspaceFiles();
-        const tree = buildTree(files);
-        explorerTreeNode.innerHTML = '';
-        renderTreeNodes(tree, explorerTreeNode);
-    }
-
-    const refreshBtn = document.getElementById('refresh-explorer-btn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            refreshExplorer();
-            showToast('Refreshed file explorer', 'success');
-        });
-    }
-
-    // Expose sync function globally
+    async function refreshExplorer() {
+        if (!explorerTreeNode) return;
+        const files = await fetchWorkspaceFiles();
+        const tree = buildTree(files);
+        explorerTreeNode.innerHTML = '';
+        renderTreeNodes(tree, explorerTreeNode);
+    }
+
+    const refreshBtn = document.getElementById('refresh-explorer-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            refreshExplorer();
+            showToast('Refreshed file explorer', 'success');
+        });
+    }
+
+    const browseBtn = document.getElementById('browse-workspace-btn');
+    if (browseBtn) {
+        browseBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+                const res = await fetch(`${API_BASE}/workspace/browse-native`, { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast(`Switched workspace to: ${data.path}`, 'success');
+                        refreshExplorer();
+                    } else {
+                        showToast(`No folder selected`, 'info');
+                    }
+                } else {
+                    showToast('Failed to browse workspace', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Error browsing workspace', 'error');
+            }
+        });
+    }
+
     window.syncAgentWorkspaceChanges = async function() {
         await refreshExplorer();
         if (activeTab) {

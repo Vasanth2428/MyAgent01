@@ -526,6 +526,38 @@ class WriteFileRequest(BaseModel):
     content: str
 
 
+@app.post("/workspace/browse-native")
+async def browse_workspace_native():
+    """Opens a native folder picker dialog and sets the workspace root."""
+    import tkinter as tk
+    from tkinter import filedialog
+    import threading
+    import src.tools.coding_tools as ct
+    
+    result = {"path": None}
+    
+    def _open_dialog():
+        root = tk.Tk()
+        root.attributes("-topmost", True)
+        root.withdraw()
+        path = filedialog.askdirectory(parent=root, title="Select Workspace Root")
+        result["path"] = path
+        root.destroy()
+        
+    thread = threading.Thread(target=_open_dialog)
+    thread.start()
+    thread.join()
+    
+    selected_path = result["path"]
+    if selected_path:
+        ct.WORKSPACE_ROOT = selected_path
+        os.environ["AGENT_WORKSPACE_ROOT"] = selected_path
+        global WORKSPACE_ROOT
+        WORKSPACE_ROOT = selected_path
+        return {"success": True, "path": selected_path}
+    return {"success": False, "error": "No folder selected"}
+
+
 @app.get("/workspace/files")
 async def list_workspace_files():
     """Recursively lists all allowed files in the workspace, excluding temporary/cache folders."""
