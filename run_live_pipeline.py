@@ -1,5 +1,8 @@
 import os
 import sys
+import codecs
+sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
 import time
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
@@ -20,7 +23,7 @@ def main():
     graph = build_multi_agent_graph(checkpointer)
     
     # Detailed prompt for a rigorous end-to-end fullstack test
-    query = """
+    default_query = """
 Build a truly functional, production-ready Fullstack AI Dashboard Platform.
 You must strictly build this inside `./workspace/ai_dashboard`.
 
@@ -36,13 +39,14 @@ Requirements:
 
 Execute this end-to-end. Do not stop until the application is fully functional, styled, and validated.
 """
+    query = sys.argv[1] if len(sys.argv) > 1 else default_query
     config = get_graph_config(f"live_build_{int(time.time())}")
     
     from src.graph.state_2pipeline import create_initial_state
     initial_state = create_initial_state([HumanMessage(content=query)], bypass_hitl=True)
     initial_state.update({
         "steps_remaining": 15,
-        "active_project": "college_website",
+        "active_project": "my-react-app",
         "session_id": f"live_build_{int(time.time())}"
     })
     

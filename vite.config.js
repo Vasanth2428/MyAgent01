@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  root: './nexus_ai',
+  root: './beezlebub/frontend',
   build: {
     outDir: '../dist',
     rollupOptions: {

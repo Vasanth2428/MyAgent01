@@ -1,22 +1,44 @@
 # State schema for Tool-Calling Agent Architecture
-from typing import List, Optional, Annotated, Dict
+from typing import List, Optional, Annotated, Dict, Any
 from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage
 
 
 def add_messages(left: List[BaseMessage], right: List[BaseMessage]) -> List[BaseMessage]:
-    """Reducer that appends new messages to the existing list."""
+    """Reducer that appends new messages to the existing list, trimming older ones to prevent token exhaustion."""
     if left is None:
         left = []
     if right is None:
         right = []
-    return left + right
+    
+    combined = left + right
+    MAX_MESSAGES = 40
+    
+    if len(combined) > MAX_MESSAGES:
+        start_idx = len(combined) - MAX_MESSAGES
+        # Ensure we don't sever a ToolMessage from its initiating AIMessage
+        from langchain_core.messages import ToolMessage
+        while start_idx > 0 and isinstance(combined[start_idx], ToolMessage):
+            start_idx -= 1
+        return combined[start_idx:]
+        
+    return combined
 
 def update_next_agent(left: str, right: str) -> str:
-    """Reducer for next_agent to avoid InvalidUpdateError during parallel execution."""
-    if right == "supervisor" and left and left != "supervisor":
-        return left # prioritize retry loops over generic supervisor return
+    """Reducer for next_agent."""
     return right if right else left
+
+def merge_dicts(left: dict, right: dict) -> dict:
+    """Reducer that merges dictionaries, or clears if __CLEAR__ flag is present."""
+    if right is None:
+        return left if left else {}
+    if right.get("__CLEAR__"):
+        return {}
+    if left is None:
+        return right.copy()
+    merged = left.copy()
+    merged.update(right)
+    return merged
 
 # Lightweight state schema - minimal tracking, relies on message history
 class AgentState(TypedDict):
@@ -54,7 +76,7 @@ class AgentState(TypedDict):
     final_answer: str
     
     # Missing fields for worker coordination
-    worker_outputs: dict
+    worker_outputs: Annotated[dict, merge_dicts]
     worker_complete: dict
     worker_type: str
     scratchpad: str
@@ -66,6 +88,16 @@ class AgentState(TypedDict):
     pending_file_approvals: dict
     created_files: List[str]
     code_modified: bool
+
+    # Durable workflow records. These are checkpointed with the graph state and
+    # deliberately kept separate from the ephemeral scratchpad.
+    project_context: Dict[str, Any]
+    task_history: List[Dict[str, Any]]
+    task_events: List[Dict[str, Any]]
+    critic_feedback: Dict[str, Any]
+    current_task_id: Optional[str]
+    current_task_domain: str
+    last_validated_task_id: Optional[str]
 
 
 def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False) -> dict:
@@ -107,5 +139,12 @@ def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False)
         "file_status_flags": {},
         "pending_file_approvals": {},
         "created_files": [],
-        "code_modified": False
+        "code_modified": False,
+        "project_context": {},
+        "task_history": [],
+        "task_events": [],
+        "critic_feedback": {},
+        "current_task_id": None,
+        "current_task_domain": "unknown",
+        "last_validated_task_id": None,
     }

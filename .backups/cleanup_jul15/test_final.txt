@@ -1,0 +1,50 @@
+TOP OF FILE LOADED!
+Loading env
+Importing mock
+Importing workflow
+Importing state
+Importing checkpointer
+Finished imports
+==============================================================
+INITIALIZING ROBUSTNESS STRESS TESTS
+==============================================================
+
+--- Running Scenario A (Stubborn Critic) ---
+Supervisor attempted to exit to synthesizer with pending tasks. Overriding.
+
+[SUPERVISOR] Next Node: 'frontend_worker' | Task ID: 'task_1' | Task: 'done
+
+[TASK CONTRACT: task_1]
+' | Swarm Tasks: 0 | Steps Left: 19
+
+[CODING WORKER] Initiating coding task: 'done
+
+[TASK CONTRACT: task_1]
+...'
+[CODING WORKER] Workspace pre-check injected (94 chars).
+[CODING WORKER] Step 1/50
+  No tool calls generated. Finishing.
+[CODING WORKER] Loop complete. Completed=True
+Error executing critic model call: 'AIMessage' object has no attribute 'valid'
+Traceback (most recent call last):
+  File "C:\Users\vasan\Documents\Apphelix Intern\RAG\test_loop_robustness.py", line 238, in <module>
+    run_scenario_A()
+  File "C:\Users\vasan\Documents\Apphelix Intern\RAG\test_loop_robustness.py", line 168, in run_scenario_A
+    result = graph.invoke(initial_state, config=config)
+  File "C:\Users\vasan\AppData\Local\Programs\Python\Python310\lib\site-packages\langgraph\pregel\main.py", line 3880, in invoke
+    for chunk in self.stream(
+  File "C:\Users\vasan\AppData\Local\Programs\Python\Python310\lib\site-packages\langgraph\pregel\main.py", line 2936, in stream
+    for _ in runner.tick(
+  File "C:\Users\vasan\AppData\Local\Programs\Python\Python310\lib\site-packages\langgraph\pregel\_runner.py", line 207, in tick
+    run_with_retry(
+  File "C:\Users\vasan\AppData\Local\Programs\Python\Python310\lib\site-packages\langgraph\pregel\_retry.py", line 585, in run_with_retry
+    return task.proc.invoke(task.input, config)
+  File "C:\Users\vasan\AppData\Local\Programs\Python\Python310\lib\site-packages\langgraph\_internal\_runnable.py", line 684, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\vasan\AppData\Local\Programs\Python\Python310\lib\site-packages\langgraph\_internal\_runnable.py", line 426, in invoke
+    ret = self.func(*args, **kwargs)
+  File "C:\Users\vasan\Documents\Apphelix Intern\RAG\src\agents\code_critic_worker.py", line 339, in code_critic_worker_node
+    "summary": report.criticism_summary if 'report' in locals() else final_text,
+  File "C:\Users\vasan\AppData\Local\Programs\Python\Python310\lib\site-packages\pydantic\main.py", line 1042, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+AttributeError: 'AIMessage' object has no attribute 'criticism_summary'

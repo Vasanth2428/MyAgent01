@@ -12,6 +12,8 @@ logger = logging.getLogger("MultiAgent.CodeCriticWorker")
 CRITIC_SYSTEM_PROMPT = """You are a Code Critic and Reviewer. Your job is to validate the frontend_worker and backend_worker outputs.
 You enforce both TECHNICAL QUALITY (syntax, architecture, logic) and DESIGN QUALITY (premium UI, aesthetic design, responsive styling).
 
+ENVIRONMENT WARNING: This system runs on a Windows machine with PowerShell. When reviewing verification command errors, if the error is due to a missing Linux command (like `cat` or `grep`), this is an environment command failure, NOT a failure of the code itself.
+
 CRITICAL INSTRUCTION: The user is often building new projects from scratch. DO NOT be overly strict about missing features, failed builds, or incomplete code during the initial scaffolding phase.
 - A FAILED build/test or missing validation command should be marked as a WARNING, not critical.
 - Let the agent make the project first; we will strive to make it perfect later.
@@ -123,13 +125,35 @@ def code_critic_worker_node(state: dict) -> dict:
     scratchpad = state.get("scratchpad", "")
     current_task = state.get("current_task", "")
     worker_outputs = state.get("worker_outputs", {})
-    
-    retry_count = state.get("critic_retry_count", 0)
-    if retry_count > 2:
-        retry_count = 2
+    current_task_id = state.get("current_task_id")
+    plan = list(state.get("plan") or [])
+
+    retry_count = 0
+    for t in plan:
+        if isinstance(t, dict) and t.get("id") == current_task_id:
+            retry_count = t.get("attempt_count", 0)
+            break
+        elif hasattr(t, "id") and t.id == current_task_id:
+            retry_count = t.attempt_count
+            break
+
+    # Review is a first-class transition. The task is not complete merely
+    # because a worker returned text; the critic owns the move to a terminal
+    # state after recording verification evidence.
+    task_contract = {}
+    for task in plan:
+        if isinstance(task, dict) and task.get("id") == current_task_id:
+            task["status"] = "in_progress"
+            task_contract = task
+            break
+
     
     # Get coding worker's output
-    coding_output = worker_outputs.get("coding_worker", "")
+    worker_name = next(
+        (name for name in ("frontend_worker", "backend_worker", "coding_worker") if worker_outputs.get(name)),
+        "coding_worker",
+    )
+    coding_output = worker_outputs.get(worker_name, "")
     if not coding_output:
         logger.warning("No coding worker output detected to critique. Skipping validation.")
         final_text = "No coding specialist output was found to validate."
@@ -138,7 +162,14 @@ def code_critic_worker_node(state: dict) -> dict:
             "worker_complete": {"code_critic_worker": True},
             "worker_outputs": {"code_critic_worker": final_text},
             "worker_type": "code_critic_worker",
-            "next_agent": "supervisor"
+            "next_agent": "supervisor",
+            "plan": plan,
+            "critic_feedback": {
+                "status": "needs_changes",
+                "target_worker": None,
+                "summary": final_text,
+                "evidence": [],
+            },
         }
         
     # 2b. Collect execution/verification artifacts from scratchpad and worker outputs
@@ -161,53 +192,56 @@ def code_critic_worker_node(state: dict) -> dict:
     auto_ci_artifacts = []
     _active_project = state.get("active_project")
     workspace_dir = os.path.abspath(f"./workspace/{_active_project}" if _active_project else "./workspace")
-    if os.path.exists(workspace_dir):
+    
+    explicit_commands = task_contract.get("verification_commands", [])
+    if explicit_commands:
+        for cmd in explicit_commands:
+            logger.info(f"[HEADLESS CRITIC] Executing explicit task contract verification: {cmd}")
+            ci_result = execute_command(cmd, wait_ms_before_async=30000)
+            try:
+                res_json = json.loads(ci_result)
+                if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
+                    task_id = res_json["data"]["task_id"]
+                    ci_result = _monitor_ci_task(task_id, cmd)
+            except Exception as e:
+                logger.warning(f"Failed to check task_id in CI result: {e}")
+            auto_ci_artifacts.append(f"--- AUTO CI RUN: {cmd} ---\n{ci_result}")
+            
+    elif task_contract.get("domain") in ["frontend", "fullstack"]:
+        logger.info("[HEADLESS CRITIC] No explicit commands. Running frontend heuristics...")
         pkg_json_path = os.path.join(workspace_dir, "package.json")
         if os.path.exists(pkg_json_path):
             try:
                 with open(pkg_json_path, 'r', encoding='utf-8') as f:
                     pkg_data = json.load(f)
-                
-                # Defensive typing against malformed package.json files
                 scripts = pkg_data.get("scripts", {}) if isinstance(pkg_data, dict) else {}
-                if not isinstance(scripts, dict):
-                    scripts = {}
-                    
-                # Look for common CI validation gates
-                for target_script in ["lint", "test", "build"]:
+                for target_script in ["build", "lint", "test"]:
                     if target_script in scripts:
-                        logger.info(f"[HEADLESS CRITIC] Auto-discovered '{target_script}' script. Executing CI gate...")
-                        ci_result = execute_command(f"npm run {target_script}", wait_ms_before_async=30000)
-                        
-                        # Real-time physics fix: Wait for the task to finish if it goes to the background
+                        cmd = f"npm run {target_script}"
+                        ci_result = execute_command(cmd, wait_ms_before_async=30000)
                         try:
-                            import json
                             res_json = json.loads(ci_result)
                             if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
                                 task_id = res_json["data"]["task_id"]
-                                ci_result = _monitor_ci_task(task_id, f"npm run {target_script}")
-                        except Exception as e:
-                            logger.warning(f"Failed to check task_id in CI result: {e}")
-                            
-                        auto_ci_artifacts.append(f"--- AUTO CI RUN: npm run {target_script} ---\n{ci_result}")
-                        # Don't run multiple if one is sufficient, but let's run all discovered for thoroughness
+                                ci_result = _monitor_ci_task(task_id, cmd)
+                        except Exception:
+                            pass
+                        auto_ci_artifacts.append(f"--- AUTO CI RUN (Fallback): {cmd} ---\n{ci_result}")
+                        break
             except Exception as e:
-                logger.warning(f"Failed to parse package.json for auto-CI: {e}")
-        elif os.path.exists(os.path.join(workspace_dir, "pytest.ini")) or os.path.exists(os.path.join(workspace_dir, "requirements.txt")):
-            logger.info("[HEADLESS CRITIC] Auto-discovered Python project. Executing pytest CI gate...")
-            ci_result = execute_command("pytest", wait_ms_before_async=30000)
-            
-            # Real-time physics fix: Wait for the task to finish if it goes to the background
-            try:
-                import json
-                res_json = json.loads(ci_result)
-                if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
-                    task_id = res_json["data"]["task_id"]
-                    ci_result = _monitor_ci_task(task_id, "pytest")
-            except Exception as e:
-                pass
+                logger.warning(f"Failed to parse package.json: {e}")
                 
-            auto_ci_artifacts.append(f"--- AUTO CI RUN: pytest ---\n{ci_result}")
+    elif os.path.exists(os.path.join(workspace_dir, "pytest.ini")) or os.path.exists(os.path.join(workspace_dir, "requirements.txt")):
+        logger.info("[HEADLESS CRITIC] Auto-discovered Python project. Executing pytest CI gate...")
+        ci_result = execute_command("pytest", wait_ms_before_async=30000)
+        try:
+            res_json = json.loads(ci_result)
+            if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
+                task_id = res_json["data"]["task_id"]
+                ci_result = _monitor_ci_task(task_id, "pytest")
+        except Exception:
+            pass
+        auto_ci_artifacts.append(f"--- AUTO CI RUN (Fallback): pytest ---\n{ci_result}")
             
     if auto_ci_artifacts:
         verification_artifacts.extend(auto_ci_artifacts)
@@ -237,7 +271,11 @@ def code_critic_worker_node(state: dict) -> dict:
     critic_prompt = [
         SystemMessage(content=CRITIC_SYSTEM_PROMPT),
         SystemMessage(content=repo_context + verification_context),
-        HumanMessage(content=f"Coding Specialist Task: {current_task}\n\nCoding Specialist Output:\n{coding_output}")
+        HumanMessage(content=(
+            f"Coding Specialist Task: {current_task}\n\n"
+            f"Task Contract: {json.dumps(task_contract, default=str)}\n\n"
+            f"Coding Specialist Output:\n{coding_output}"
+        ))
     ]
     
     is_invalid = False
@@ -300,13 +338,23 @@ def code_critic_worker_node(state: dict) -> dict:
         "next_agent": "supervisor",
         "active_project": state.get("active_project"),
         "created_files": state.get("created_files", []),
+        "plan": plan,
+        "critic_feedback": {
+            "status": "needs_changes" if is_invalid else "validated",
+            "target_worker": worker_name if worker_name in {"frontend_worker", "backend_worker"} else None,
+            "summary": report.criticism_summary if 'report' in locals() else final_text,
+            "findings": [finding.model_dump() for finding in report.findings] if 'report' in locals() else [],
+            "evidence": [
+                {"source": "verification", "details": artifact[:2000]}
+                for artifact in verification_artifacts[-5:]
+            ],
+        },
     }
     
     if is_invalid and retry_count < 2:
         logger.info(f"[CODE CRITIC WORKER] Critical issue detected! Forcing coding worker retry (retry {retry_count + 1}/2).")
-        current_plan = state.get("plan", [])
-
-        # Issue #2: Include specific critic findings in the retry task so the
+        # Include specific critic findings in the retry instruction, while
+        # preserving the original task ID and contract.
         # coding worker gets concrete corrective instructions, not a vague "FIX ERROR".
         critic_feedback_summary = report.criticism_summary if report else "Unknown issues detected."
         finding_details = []
@@ -319,10 +367,9 @@ def code_critic_worker_node(state: dict) -> dict:
                     finding_details.append(detail)
         findings_text = "; ".join(finding_details) if finding_details else critic_feedback_summary
 
-        state_update["plan"] = current_plan + [f"FIX: {findings_text[:500]}"]
         state_update["current_task"] = f"CRITIC RETRY ({retry_count + 1}/2): Address these specific issues found by the code critic: {findings_text[:800]}"
         state_update["critic_retry_count"] = retry_count + 1
-        state_update["next_agent"] = "coding_worker"
+        state_update["next_agent"] = "supervisor"
     else:
         # Issue #2: Reset retry count to prevent stale state from blocking future critic cycles
         state_update["critic_retry_count"] = 0

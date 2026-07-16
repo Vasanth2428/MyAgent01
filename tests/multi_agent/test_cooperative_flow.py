@@ -110,8 +110,8 @@ def test_synthesizer_compiles_final_answer():
         assert result["next_agent"] == "FINISH"
 
 
-def test_supervisor_planning_output():
-    """Test supervisor planning output parsing and state update."""
+def test_supervisor_routes_to_architect():
+    """Test that supervisor routes to architect when plan is empty."""
     state = {
         "messages": [HumanMessage(content="Get revenue and compute 15% tax")],
         "plan": [],
@@ -119,9 +119,8 @@ def test_supervisor_planning_output():
         "steps_remaining": 10
     }
     
-    from src.graph.supervisor import SupervisorDecision
-    mock_llm_response = SupervisorDecision(
-        plan=["Find revenue", "Compute tax"],
+    from src.graph.supervisor import SupervisorRouting
+    mock_llm_response = SupervisorRouting(
         next_agent="rag_worker",
         current_task="Retrieve company revenue"
     )
@@ -133,9 +132,8 @@ def test_supervisor_planning_output():
         
         result = supervisor_node(state)
         
-        assert result["plan"] == ["Find revenue", "Compute tax"]
-        assert result["next_agent"] == "rag_worker"
-        assert result["current_task"] == "Retrieve company revenue"
+        assert result["next_agent"] == "architect_worker"
+        assert result["current_task"] == "Create the initial architecture blueprint and task plan."
         assert result["steps_remaining"] == 9
 
 

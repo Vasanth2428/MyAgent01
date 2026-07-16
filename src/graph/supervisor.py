@@ -74,42 +74,39 @@ class PlanTask(BaseModel):
     id: str
     title: str
     description: str = ""
+    domain: str = "unknown"
     status: TaskStatus = "pending"
     assigned_agent: Optional[str] = None
     attempt_count: int = 0
     validation_required: bool = False
     fingerprint: str = ""
     last_result_summary: str = ""
+    acceptance_criteria: List[str] = Field(default_factory=list)
+    verification_commands: List[str] = Field(default_factory=list)
+    expected_artifacts: List[str] = Field(default_factory=list)
+    owned_paths: List[str] = Field(default_factory=list)
+    depends_on: List[str] = Field(default_factory=list)
+    max_attempts: int = 3
+    evidence: List[Dict[str, Any]] = Field(default_factory=list)
+    review_feedback: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class PlanTaskInput(BaseModel):
     title: str
     description: str = ""
     validation_required: bool = False
+    domain: str = "unknown"
+    acceptance_criteria: List[str] = Field(default_factory=list)
+    verification_commands: List[str] = Field(default_factory=list)
 
-
-class SupervisorDecision(BaseModel):
-    next_agent: str = Field(description="The next agent to route to")
-    selected_task_id: Optional[str] = Field(
-        default=None,
-        description="ID of an existing task to continue or execute next"
-    )
-    current_task: str = Field(
-        description="Specific instruction for the next worker. Prefer the selected task title/description.",
-        default=""
-    )
-    new_tasks: List[PlanTaskInput] = Field(
-        default_factory=list,
-        description="Only append genuinely new tasks that do not already exist in the plan"
-    )
-    parallel_tasks: List[str] = Field(
-        default_factory=list,
-        description="If routing to frontend_worker or backend_worker, you may provide multiple independent tasks here to be executed concurrently by separate workers."
-    )
-    active_project: Optional[str] = Field(
-        description="Sanitized folder name for the project if this task involves creating an application.",
-        default=""
-    )
+class ProjectContextUpdate(BaseModel):
+    active_project: Optional[str] = Field(None, description="The name of the current active project, or None if global.")
+class SupervisorRouting(BaseModel):
+    next_agent: str = Field(description="The worker to execute the next action (or 'parallel').")
+    current_task: Optional[Any] = Field(description="The instruction to pass to the next agent. Will be stringified.")
+    current_task_id: Optional[str] = Field(None, description="The ID of the task being executed.")
+    parallel_tasks: List[str] = Field(default_factory=list, description="IDs of tasks to execute if routing to 'parallel'.")
+    active_project: Optional[str] = Field(description="Optional: Active project directory (e.g. 'frontend' or 'backend').", default=None)
 
 
 def get_routing_model():
@@ -126,7 +123,7 @@ def get_routing_model():
         SUPERVISOR_MODEL_FALLBACK,
         temperature=0,
         api_key_envs=keys,
-        structured_output=SupervisorDecision,
+        structured_output=SupervisorRouting,
     )
 
 
@@ -142,8 +139,8 @@ def normalize_task_text(text: str) -> str:
     return text.strip()
 
 
-def task_fingerprint(title: str, description: str = "") -> str:
-    payload = normalize_task_text(f"{title} {description}".strip())
+def task_fingerprint(title: str, description: str = "", *args) -> str:
+    payload = normalize_task_text(f"{title} {description} {' '.join(str(a) for a in args if a)}".strip())
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -255,45 +252,83 @@ def extract_validation_status(messages: List[Any]) -> Optional[str]:
     return None
 
 
-def apply_post_worker_state_updates(state: dict, plan: List[PlanTask], messages: List[Any]) -> tuple[List[PlanTask], Optional[str]]:
-    """
-    Deterministic task state updates based on the most recent worker output.
-    Returns (updated_plan, last_validated_task_id).
-    """
+def build_task_instruction(task: PlanTask, original_instruction: str) -> str:
+    """Combines LLM instruction with hard verification contracts for the worker."""
+    instruction = f"{original_instruction}\n\n[TASK CONTRACT: {task.id}]\n"
+    if task.acceptance_criteria:
+        instruction += "Acceptance Criteria:\n- " + "\n- ".join(task.acceptance_criteria) + "\n"
+    if task.verification_commands:
+        instruction += "Verification Commands:\n- " + "\n- ".join(task.verification_commands) + "\n"
+    if task.expected_artifacts:
+        instruction += "Expected Artifacts:\n- " + "\n- ".join(task.expected_artifacts) + "\n"
+    return instruction
+
+
+from datetime import datetime, timezone
+
+def apply_post_worker_state_updates(state: dict, plan: List[PlanTask], messages: list) -> tuple[List[PlanTask], str, list, list]:
+    """Deterministic state transitions based on worker completion flags."""
+    worker_outputs = state.get("worker_outputs", {})
+    worker_complete = state.get("worker_complete", {})
     current_task_id = state.get("current_task_id")
-    last_validated_task_id = state.get("last_validated_task_id")
-    validation_status = extract_validation_status(messages)
+    last_validated_task_id = state.get("last_validated_task_id", "")
+    task_history = state.get("task_history") or []
+    task_events = state.get("task_events") or []
 
     if not current_task_id:
-        return plan, last_validated_task_id
+        return plan, last_validated_task_id, task_history, task_events
 
-    current_task = get_task_by_id(plan, current_task_id)
-    if not current_task:
-        return plan, last_validated_task_id
+    selected_task = get_task_by_id(plan, current_task_id)
+    if not selected_task:
+        return plan, last_validated_task_id, task_history, task_events
 
-    if validation_status == "validated":
-        current_task.status = "done"
-        current_task.last_result_summary = "Validated by code_critic_worker"
-        last_validated_task_id = current_task.id
-        state["current_task_id"] = None
-    elif validation_status == "failed_repeatedly":
-        current_task.status = "blocked"
-        current_task.last_result_summary = "Verification failed repeatedly"
-        state["current_task_id"] = None
-    elif validation_status == "needs_changes":
-        current_task.status = "in_progress"
-        current_task.last_result_summary = "Critic requested changes"
+    if selected_task.status == "needs_replan":
+        return plan, last_validated_task_id, task_history, task_events
 
-    return plan, last_validated_task_id
+    worker_type = state.get("worker_type", "")
+    is_complete = worker_complete.get(worker_type, False)
+    
+    if is_complete and worker_type in {"frontend_worker", "backend_worker", "code_critic_worker", "rag_worker", "web_worker", "utility_worker", "scraper_worker"}:
+        if worker_type == "code_critic_worker":
+            # Critic decides if it's validated
+            critic_feedback = state.get("critic_feedback", {})
+            if critic_feedback.get("status") == "validated":
+                selected_task.status = "validated"
+                last_validated_task_id = current_task_id
+                selected_task.evidence.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "type": "critic_validation",
+                    "worker": "code_critic_worker",
+                    "summary": critic_feedback.get("feedback", "")
+                })
+            elif critic_feedback.get("status") == "needs_changes":
+                pass
+        else:
+            # Coding/utility workers finish their part
+            if selected_task.validation_required and worker_type in {"frontend_worker", "backend_worker"}:
+                selected_task.status = "in_progress" # Waiting for critic
+            else:
+                selected_task.status = "done"
+            
+            output_summary = str(worker_outputs.get(worker_type, ""))[:500]
+            selected_task.last_result_summary = output_summary
+            
+            selected_task.evidence.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "type": "worker_completion",
+                "worker": worker_type,
+                "summary": output_summary
+            })
+            
+            task_history.append({
+                "task_id": selected_task.id,
+                "worker": worker_type,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "status": selected_task.status,
+                "summary": output_summary
+            })
 
-
-def build_task_instruction(task: Optional[PlanTask], fallback: str = "") -> str:
-    if task:
-        parts = [task.title.strip()]
-        if task.description.strip():
-            parts.append(task.description.strip())
-        return " - ".join(parts)
-    return fallback or ""
+    return plan, last_validated_task_id, task_history, task_events
 
 
 def supervisor_node(state: dict) -> dict:
@@ -309,9 +344,11 @@ def supervisor_node(state: dict) -> dict:
         else ""
     )
 
-    # Normalize legacy plans and apply deterministic post-worker updates first.
     plan = normalize_plan(state.get("plan") or [])
-    plan, last_validated_task_id = apply_post_worker_state_updates(state, plan, messages)
+    plan, last_validated_task_id, task_history, task_events = apply_post_worker_state_updates(state, plan, messages)
+
+    is_goal_completed = state.get("project_context", {}).get("is_goal_completed", False)
+    all_completed = all(t.status in {"done", "validated"} for t in plan) if plan else False
 
     routing_prompt = [
         SystemMessage(content=SUPERVISOR_PROMPT + ide_context),
@@ -355,15 +392,72 @@ def supervisor_node(state: dict) -> dict:
     current_task = ""
     parallel_tasks: List[str] = []
     active_project_override = None
+    legacy_plan_output: Optional[List[str]] = None
     current_task_id = state.get("current_task_id")
-
+    
     try:
-        # Fast path: if all tasks are complete after deterministic updates, stop routing workers.
-        if all_tasks_complete(plan):
+        review_status = (state.get("critic_feedback") or {}).get("status")
+        review_target = (state.get("critic_feedback") or {}).get("target_worker")
+        
+        if state.get("coding_worker_resume_tool_result"):
+            next_agent = state.get("worker_type") or "frontend_worker"
+            return {
+                "next_agent": next_agent,
+                "current_task": state.get("current_task", ""),
+                "current_task_id": current_task_id,
+            }
+
+        if is_goal_completed:
+            next_agent = "synthesizer"
+        elif not plan and next_agent != "architect_worker":
+            next_agent = "architect_worker"
+            current_task_id = None
+            current_task = "Create the initial architecture blueprint and task plan."
+        elif all_completed and not is_goal_completed:
+            next_agent = "architect_worker"
+            current_task_id = None
+            current_task = "Iteratively plan the next tasks for the user's overarching goal."
+        elif any(task.status == "needs_replan" for task in plan):
+            next_agent = "architect_worker"
+            current_task_id = None
+            current_task = "Replan tasks that exhausted their retry budget."
+        elif review_status == "needs_changes" and review_target in {"frontend_worker", "backend_worker"}:
+            selected_task = get_task_by_id(plan, state.get("current_task_id"))
+            next_agent = review_target
+            if selected_task:
+                if selected_task.attempt_count >= selected_task.max_attempts:
+                    logger.warning(f"Task {selected_task.id} failed repeatedly (attempts: {selected_task.attempt_count}). Escalating.")
+                    selected_task.status = "needs_replan"
+                    next_agent = "architect_worker"
+                    current_task_id = None
+                    current_task = "Replan tasks that exhausted their retry budget."
+                else:
+                    current_task_id = selected_task.id
+                    selected_task.status = "in_progress"
+                    selected_task.assigned_agent = next_agent
+                    selected_task.attempt_count += 1
+                    task_events.append({"event": "task_retry_started", "task": selected_task.id})
+                    current_task = build_task_instruction(selected_task, "")
+            return {
+                "next_agent": next_agent,
+                "current_task": current_task,
+                "current_task_id": current_task_id,
+                "plan": serialize_plan(plan),
+                "task_events": task_events,
+            }
+        elif all_tasks_complete(plan):
             next_agent = "synthesizer"
         else:
             model = get_routing_model()
-            response = model.invoke(routing_prompt)
+            for attempt in range(3):
+                try:
+                    response = model.invoke(routing_prompt)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        raise e
+                    logger.warning(f"Supervisor LLM parsing failed (attempt {attempt+1}): {e}")
+                    routing_prompt.append(HumanMessage(content=f"Failed to parse structured output. Error: {e}\nPlease correct your JSON and try again."))
 
             next_agent = response.next_agent
             parallel_tasks = response.parallel_tasks or []
@@ -371,37 +465,21 @@ def supervisor_node(state: dict) -> dict:
             if active_project_override == "":
                 active_project_override = None
 
-            # Merge newly proposed tasks without duplicating existing ones.
-            for new_task in response.new_tasks or []:
-                fp = task_fingerprint(new_task.title, new_task.description)
-                existing = find_task_by_fingerprint(plan, fp)
-                if existing:
-                    continue
-                plan.append(
-                    PlanTask(
-                        id=f"task_{uuid.uuid4().hex[:8]}",
-                        title=new_task.title.strip(),
-                        description=new_task.description.strip(),
-                        validation_required=new_task.validation_required,
-                        fingerprint=fp,
-                    )
-                )
+            selected_task = get_task_by_id(plan, response.current_task_id)
 
-            selected_task = get_task_by_id(plan, response.selected_task_id)
-
-            # Fallback if the model did not pick a task but there is work left.
             if selected_task is None and next_agent != "synthesizer":
                 selected_task = get_next_pending_task(plan)
 
-            # Hard guard: never allow routing back into a validated/done task.
-            if selected_task and selected_task.status in {"done", "validated"}:
+            if selected_task and selected_task.domain == "integration" and next_agent in {"frontend_worker", "backend_worker"}:
+                next_agent = "backend_worker"
+
+            if selected_task and selected_task.status in {"done", "validated", "blocked", "cancelled"}:
                 logger.warning(
-                    "Supervisor selected a completed task (%s). Overriding to next pending task.",
+                    "Supervisor selected a completed or blocked task (%s). Overriding to next pending task.",
                     selected_task.id
                 )
                 selected_task = get_next_pending_task([t for t in plan if t.id != selected_task.id])
 
-            # Hard guard: prevent validated coding loops.
             if (
                 next_agent in {"frontend_worker", "backend_worker"}
                 and selected_task
@@ -415,26 +493,40 @@ def supervisor_node(state: dict) -> dict:
                 if not selected_task:
                     next_agent = "synthesizer"
 
-            # Generic same-agent loop guard for non-coding workers.
             if messages and isinstance(messages[-1], AIMessage):
                 last_agent = messages[-1].name
                 if last_agent == next_agent and next_agent not in ["frontend_worker", "backend_worker", "synthesizer"]:
-                    logger.warning(f"Supervisor loop detected: {next_agent} called twice. Forcing synthesizer.")
-                    next_agent = "synthesizer"
-                    selected_task = None
+                    logger.warning(f"Supervisor loop detected: {next_agent} called twice.")
+                    selected_task = get_next_pending_task(plan)
+                    if selected_task:
+                        next_agent = "frontend_worker" if selected_task.domain == "frontend" else "backend_worker"
+                    else:
+                        next_agent = "synthesizer"
 
-            # If we still have no selected task but pending work exists, grab the next pending task.
+            if next_agent == "synthesizer" and not all_tasks_complete(plan):
+                logger.warning("Supervisor attempted to exit to synthesizer with pending tasks. Overriding.")
+                selected_task = get_next_pending_task(plan)
+                if selected_task:
+                    next_agent = "frontend_worker" if selected_task.domain == "frontend" else "backend_worker"
+
             if next_agent != "synthesizer" and selected_task is None:
                 selected_task = get_next_pending_task(plan)
                 if selected_task is None:
                     next_agent = "synthesizer"
+                elif next_agent not in ["frontend_worker", "backend_worker"]:
+                    next_agent = "frontend_worker" if selected_task.domain == "frontend" else "backend_worker"
 
             if selected_task and next_agent != "synthesizer":
                 current_task_id = selected_task.id
                 selected_task.status = "in_progress"
                 selected_task.assigned_agent = next_agent
                 selected_task.attempt_count += 1
-                current_task = build_task_instruction(selected_task, response.current_task)
+                task_events.append({"event": "task_started", "task": selected_task.id})
+                current_task = (
+                    response.current_task
+                    if legacy_plan_output is not None and response.current_task
+                    else build_task_instruction(selected_task, response.current_task or "")
+                )
             else:
                 current_task_id = None
                 current_task = response.current_task or ""
@@ -446,7 +538,7 @@ def supervisor_node(state: dict) -> dict:
     valid_agents = [
         "rag_worker", "web_worker", "utility_worker", "scraper_worker",
         "critic_worker", "report_worker", "frontend_worker", "backend_worker", "code_critic_worker",
-        "synthesizer", "FINISH",
+        "architect_worker", "synthesizer", "FINISH",
     ]
     if next_agent not in valid_agents or next_agent == "FINISH":
         next_agent = "synthesizer"
@@ -461,6 +553,8 @@ def supervisor_node(state: dict) -> dict:
         "active_project": active_project_override if active_project_override is not None else (state.get("active_project") or None),
         "steps_remaining": new_steps,
         "retry_counter": retry_counter,
+        "task_history": task_history,
+        "task_events": task_events,
     }
 
     print(

@@ -39,7 +39,10 @@ def validate_syntax(code_content: str, filename: str) -> Tuple[bool, str]:
 
             try:
                 cmd = f"npx esbuild \"{temp_path}\""
-                res = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+                try:
+                    res = subprocess.run(cmd, capture_output=True, text=True, shell=True, timeout=15)
+                except subprocess.TimeoutExpired:
+                    return False, "esbuild validation timed out after 15 seconds. Ensure no hanging processes."
                 
                 # Check for esbuild warnings/errors
                 if res.returncode != 0:

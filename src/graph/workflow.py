@@ -3,7 +3,7 @@ import os
 import logging
 from typing import Union, List
 from langgraph.graph import StateGraph, END
-from langgraph.constants import Send
+from langgraph.types import Send
 from langgraph.store.memory import InMemoryStore
 from src.graph.worker_output_cache import store_worker_output
 
@@ -21,6 +21,7 @@ from src.agents.report_worker import report_worker_node
 from src.agents.frontend_worker import frontend_worker_node
 from src.agents.backend_worker import backend_worker_node
 from src.agents.code_critic_worker import code_critic_worker_node
+from src.agents.architect_worker import architect_worker_node
 
 MAX_RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", "50"))
 
@@ -56,6 +57,8 @@ def route_based_on_next_agent(state: dict) -> Union[str, List[Send]]:
         return "backend_worker_node"
     elif next_agent == "code_critic_worker":
         return "code_critic_worker_node"
+    elif next_agent == "architect_worker":
+        return "architect_worker_node"
     elif next_agent == "synthesizer":
         return "synthesizer_node"
     return END
@@ -96,11 +99,11 @@ def aggregate_parallel_results_node(state: dict) -> dict:
     approval_tool = state.get("approval_tool", "")
     waiting_for_approval = bool(state.get("waiting_for_approval", False))
 
-    return {
+    ret = {
         "worker_output_ids": worker_output_ids,
         "worker_output_summaries": worker_output_summaries,
         "scratchpad_references": scratchpad_references,
-        "worker_outputs": {},
+        "worker_outputs": {"__CLEAR__": True},
         "scratchpad": "",
         "active_document_ids": active_document_ids,
         "task_hashes": task_hashes,
@@ -111,6 +114,12 @@ def aggregate_parallel_results_node(state: dict) -> dict:
         "waiting_for_approval": waiting_for_approval,
         "next_agent": "supervisor",
     }
+    
+    # Clear stale critic_feedback unless the critic just generated it
+    if state.get("worker_type") != "code_critic_worker":
+        ret["critic_feedback"] = {}
+        
+    return ret
 
 
 def build_multi_agent_graph(checkpointer=None):
@@ -126,6 +135,7 @@ def build_multi_agent_graph(checkpointer=None):
     workflow.add_node("frontend_worker_node", frontend_worker_node)
     workflow.add_node("backend_worker_node", backend_worker_node)
     workflow.add_node("code_critic_worker_node", code_critic_worker_node)
+    workflow.add_node("architect_worker_node", architect_worker_node)
     workflow.add_node("synthesizer_node", synthesizer_node)
     workflow.add_node("aggregate_parallel_results_node", aggregate_parallel_results_node)
 
@@ -146,6 +156,7 @@ def build_multi_agent_graph(checkpointer=None):
             "frontend_worker_node": "frontend_worker_node",
             "backend_worker_node": "backend_worker_node",
             "code_critic_worker_node": "code_critic_worker_node",
+            "architect_worker_node": "architect_worker_node",
             "synthesizer_node": "synthesizer_node",
             END: END,
         },
@@ -179,6 +190,7 @@ def build_multi_agent_graph(checkpointer=None):
     )
 
     workflow.add_edge("code_critic_worker_node", "aggregate_parallel_results_node")
+    workflow.add_edge("architect_worker_node", "aggregate_parallel_results_node")
     
     def route_after_aggregation(state: dict) -> str:
         next_agt = state.get("next_agent", "supervisor")

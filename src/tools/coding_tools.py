@@ -116,13 +116,18 @@ def _has_allowed_extension(filepath: str) -> bool:
 def _get_absolute_path(filepath: str) -> str:
     """Get absolute path to a file in the `./workspace` folder."""
     p = filepath.replace("\\", "/")
+    
+    # Strip leading slashes to prevent os.path.join from treating it as a drive-absolute path on Windows
+    while p.startswith("/"):
+        p = p[1:]
+        
     while p.startswith("./"):
         p = p[2:]
     if p.startswith("workspace/"):
         p = p[len("workspace/"):]
     while p.startswith("./"):
         p = p[2:]
-    return os.path.realpath(os.path.join(WORKSPACE_ROOT, p))
+    return os.path.realpath(os.path.join(WORKSPACE_ROOT, os.path.normpath(p)))
 
 
 def view_code_file(filepath: str, start_line: int = 1, end_line: int = 100) -> str:

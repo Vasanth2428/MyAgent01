@@ -9,6 +9,7 @@ def test_supervisor_routing():
     assert route_based_on_next_agent({"next_agent": "rag_worker", "steps_remaining": 5}) == "rag_worker_node"
     assert route_based_on_next_agent({"next_agent": "web_worker", "steps_remaining": 5}) == "web_worker_node"
     assert route_based_on_next_agent({"next_agent": "utility_worker", "steps_remaining": 5}) == "utility_worker_node"
+    assert route_based_on_next_agent({"next_agent": "architect_worker", "steps_remaining": 5}) == "architect_worker_node"
     assert route_based_on_next_agent({"next_agent": "FINISH", "steps_remaining": 5}) == END
 
 
