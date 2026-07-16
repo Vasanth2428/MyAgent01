@@ -481,6 +481,7 @@ def main():
          # Mock retrieval service in coding worker
          mock_service = MagicMock()
          mock_service.retriever = mock_retriever
+         mock_service.search_agent_memory.return_value = []
          mock_get_service.return_value = mock_service
          
          result = graph.invoke(initial_state, config=config)

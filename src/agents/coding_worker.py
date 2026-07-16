@@ -1659,9 +1659,25 @@ def coding_worker_node(state: dict) -> dict:
 
             
 
-            print(f"  Calling Tool: '{tool_name}' ({tool_calls_count}/{max_tool_calls}) with args: {tool_args}")
-
+            import json
+            tool_signature_str = f"{tool_name} {json.dumps(tool_args)}"
             
+            # 1. Episodic Memory Retrieval (Pre-Execution Guardrail)
+            skip_execution = False
+            try:
+                past_failures = get_retrieval_service().search_agent_memory(tool_signature_str, session_id, limit=1)
+                if past_failures:
+                    failure = past_failures[0]
+                    print(f"  [EPISODIC MEMORY] Prevented repeating past failure: {failure['outcome'][:100]}...")
+                    observation = f"[EPISODIC MEMORY GUARDRAIL] You previously attempted this exact action and it failed.\nPrevious Outcome:\n{failure['outcome']}\n\nDo not repeat this mistake. You MUST use a different approach or tool."
+                    tool_message = ToolMessage(content=observation, tool_call_id=tool_id, name=tool_name)
+                    agent_messages.append(tool_message)
+                    skip_execution = True
+            except Exception as e:
+                logger.warning(f"Failed to query episodic memory: {e}")
+                
+            if skip_execution:
+                continue
 
             if tool_name in ["create_files", "modify_files", "delete_file", "multi_replace_file_content", "run_safe_commands"]:
                 filepath = tool_args.get("filepath", "")
@@ -1775,14 +1791,19 @@ def coding_worker_node(state: dict) -> dict:
                                     created_files_this_run.append(filepath)
 
                     except Exception as e:
-
                         observation = f"Error executing tool '{tool_name}': {e}"
 
                     print(f"  Observation (first 100 chars): {observation[:100]}")
-
                     tool_message = ToolMessage(content=observation, tool_call_id=tool_id, name=tool_name)
-
                     agent_messages.append(tool_message)
+
+                    # 2. Episodic Memory Storage (Post-Execution Logging)
+                    is_error = "error" in observation.lower() or "fail" in observation.lower() or "not found" in observation.lower()
+                    if is_error:
+                        try:
+                            get_retrieval_service().store_agent_memory(session_id, tool_signature_str, observation, success=False)
+                        except Exception as e:
+                            logger.warning(f"Failed to store episodic memory: {e}")
 
             elif tool_name in tools_map:
 
@@ -1807,6 +1828,14 @@ def coding_worker_node(state: dict) -> dict:
                 tool_message = ToolMessage(content=observation, tool_call_id=tool_id, name=tool_name)
 
                 agent_messages.append(tool_message)
+
+                # 2. Episodic Memory Storage (Post-Execution Logging)
+                is_error = "error" in observation.lower() or "fail" in observation.lower() or "not found" in observation.lower()
+                if is_error:
+                    try:
+                        get_retrieval_service().store_agent_memory(session_id, tool_signature_str, observation, success=False)
+                    except Exception as e:
+                        logger.warning(f"Failed to store episodic memory: {e}")
 
             else:
 

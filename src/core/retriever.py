@@ -226,6 +226,38 @@ class WeaviateRetriever:
                     self.code_collection = self.client.collections.get("RAGCode")
                 else:
                     self.code_collection = self.collection  # Fallback to RAGKnowledge if RAGCode doesn't exist
+
+                if not self.client.collections.exists("AgentMemory"):
+                    if _is_local:
+                        logger.info("Initializing 'AgentMemory' collection (local mode)...")
+                        self.client.collections.create(
+                            name="AgentMemory",
+                            vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                            properties=[
+                                wvc.config.Property(name="action_summary", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="outcome", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="session_id", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="timestamp", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="success", data_type=wvc.config.DataType.BOOL),
+                            ]
+                        )
+                    else:
+                        logger.info("Initializing 'AgentMemory' collection (cloud mode)...")
+                        self.client.collections.create(
+                            name="AgentMemory",
+                            vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_huggingface(
+                                model="sentence-transformers/all-MiniLM-L6-v2",
+                                vectorize_collection_name=False,
+                            ),
+                            properties=[
+                                wvc.config.Property(name="action_summary", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="outcome", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="session_id", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="timestamp", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="success", data_type=wvc.config.DataType.BOOL),
+                            ]
+                        )
+                self.memory_collection = self.client.collections.get("AgentMemory")
             except Exception as e:
                 logger.error(f"Failed to initialize Weaviate collections: {e}")
                 self._connected = False
@@ -693,6 +725,57 @@ class WeaviateRetriever:
 
             results.sort(key=lambda x: x["score"], reverse=True)
             return [item["chunk"] for item in results[:limit]]
+
+    def store_memory(self, session_id: str, action_summary: str, outcome: str, success: bool = False):
+        """Asynchronously stores an episodic memory entry into Weaviate."""
+        if not self._connected or not hasattr(self, "memory_collection"):
+            return
+            
+        def _insert():
+            import time
+            props = {
+                "session_id": session_id,
+                "action_summary": action_summary,
+                "outcome": outcome,
+                "timestamp": time.time(),
+                "success": success
+            }
+            if self._is_local_weaviate:
+                from src.core.services.grounding_service import _get_shared_embedding_model
+                embedding_model = _get_shared_embedding_model()
+                vector = embedding_model.encode(action_summary).tolist()
+                self.memory_collection.data.insert(properties=props, vector=vector)
+            else:
+                self.memory_collection.data.insert(properties=props)
+        
+        threading.Thread(target=lambda: self.execute_with_retry(_insert), daemon=True).start()
+
+    def search_memory(self, query: str, session_id: str, limit: int = 2) -> List[Dict[str, Any]]:
+        """Retrieves semantically similar episodic memories for the session."""
+        if not self._connected or not hasattr(self, "memory_collection"):
+            return []
+            
+        from src.core.services.grounding_service import _get_shared_embedding_model
+        embedding_model = _get_shared_embedding_model()
+        query_vector = embedding_model.encode(query).tolist()
+        
+        def _query():
+            return self.memory_collection.query.near_vector(
+                near_vector=query_vector,
+                limit=limit,
+                filters=wvc.query.Filter.by_property("session_id").equal(session_id) & wvc.query.Filter.by_property("success").equal(False),
+                return_properties=["action_summary", "outcome"]
+            )
+            
+        try:
+            response = self.execute_with_retry(_query)
+            return [{
+                "action": obj.properties.get("action_summary"),
+                "outcome": obj.properties.get("outcome")
+            } for obj in response.objects]
+        except Exception as e:
+            logger.error(f"Failed to search AgentMemory: {e}")
+            return []
 
     def close(self):
         """Safely terminates the connection to Weaviate Cloud."""

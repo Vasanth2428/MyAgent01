@@ -178,3 +178,14 @@ class CodeRetrievalService:
             "calls": {k: list(v) for k, v in self.indexer.dependency_graph.calls.items()},
             "called_by": {k: list(v) for k, v in self.indexer.dependency_graph.called_by.items()},
         }
+
+    def store_agent_memory(self, session_id: str, action_summary: str, outcome: str, success: bool = False):
+        """Asynchronously stores an episodic memory entry into Weaviate."""
+        if hasattr(self.retriever, "store_memory"):
+            self.retriever.store_memory(session_id, action_summary, outcome, success)
+
+    def search_agent_memory(self, query: str, session_id: str, limit: int = 2) -> List[Dict[str, Any]]:
+        """Retrieves semantically similar episodic memories for the session."""
+        if hasattr(self.retriever, "search_memory"):
+            return self.retriever.search_memory(query, session_id, limit)
+        return []
