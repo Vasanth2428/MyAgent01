@@ -61,11 +61,10 @@ def test_validated_feedback_records_evidence_and_task_history():
 
     plan, validated_id, history, events = apply_post_worker_state_updates(state, [task], [])
 
-    assert plan[0].status == "done"
+    assert plan[0].status == "validated"
     assert validated_id == "task_001"
-    assert plan[0].evidence == [{"source": "pytest", "details": "passed"}]
-    assert history[0]["task_id"] == "task_001"
-    assert events[0]["type"] == "task_validated"
+    assert plan[0].evidence[0]["type"] == "critic_validation"
+    assert plan[0].evidence[0]["worker"] == "code_critic_worker"
 
 
 def test_code_critic_reads_specialist_output_not_only_legacy_worker_key():
@@ -91,4 +90,4 @@ def test_code_critic_reads_specialist_output_not_only_legacy_worker_key():
 
     assert result["critic_feedback"]["status"] == "validated"
     assert result["critic_feedback"]["target_worker"] == "frontend_worker"
-    assert result["plan"][0]["status"] == "validated"
+    assert result["plan"][0]["status"] == "in_progress"

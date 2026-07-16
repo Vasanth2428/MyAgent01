@@ -258,6 +258,34 @@ class WeaviateRetriever:
                             ]
                         )
                 self.memory_collection = self.client.collections.get("AgentMemory")
+
+                if not self.client.collections.exists("RAGDocs"):
+                    if _is_local:
+                        logger.info("Initializing 'RAGDocs' collection (local mode)...")
+                        self.client.collections.create(
+                            name="RAGDocs",
+                            vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                            properties=[
+                                wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="library_name", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="url", data_type=wvc.config.DataType.TEXT),
+                            ]
+                        )
+                    else:
+                        logger.info("Initializing 'RAGDocs' collection (cloud mode)...")
+                        self.client.collections.create(
+                            name="RAGDocs",
+                            vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_huggingface(
+                                model="sentence-transformers/all-MiniLM-L6-v2",
+                                vectorize_collection_name=False,
+                            ),
+                            properties=[
+                                wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="library_name", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="url", data_type=wvc.config.DataType.TEXT),
+                            ]
+                        )
+                self.docs_collection = self.client.collections.get("RAGDocs")
             except Exception as e:
                 logger.error(f"Failed to initialize Weaviate collections: {e}")
                 self._connected = False
@@ -775,6 +803,59 @@ class WeaviateRetriever:
             } for obj in response.objects]
         except Exception as e:
             logger.error(f"Failed to search AgentMemory: {e}")
+            return []
+
+    def store_rag_doc(self, content: str, library_name: str, url: str = ""):
+        """Stores a chunk of official documentation in the RAGDocs collection."""
+        if not self._connected or not hasattr(self, "docs_collection"):
+            return
+            
+        def _insert():
+            props = {
+                "content": content,
+                "library_name": library_name,
+                "url": url
+            }
+            if self._is_local_weaviate:
+                from src.core.services.grounding_service import _get_shared_embedding_model
+                embedding_model = _get_shared_embedding_model()
+                vector = embedding_model.encode(content).tolist()
+                self.docs_collection.data.insert(properties=props, vector=vector)
+            else:
+                self.docs_collection.data.insert(properties=props)
+                
+        threading.Thread(target=lambda: self.execute_with_retry(_insert), daemon=True).start()
+
+    def search_rag_docs(self, query: str, library_name: str = None, limit: int = 5) -> List[Dict[str, str]]:
+        """Retrieves exact syntax documentation to prevent API hallucinations."""
+        if not self._connected or not hasattr(self, "docs_collection"):
+            return []
+            
+        from src.core.services.grounding_service import _get_shared_embedding_model
+        embedding_model = _get_shared_embedding_model()
+        query_vector = embedding_model.encode(query).tolist()
+        
+        filters = None
+        if library_name:
+            filters = wvc.query.Filter.by_property("library_name").equal(library_name)
+            
+        def _query():
+            return self.docs_collection.query.near_vector(
+                near_vector=query_vector,
+                limit=limit,
+                filters=filters,
+                return_properties=["content", "library_name", "url"]
+            )
+            
+        try:
+            response = self.execute_with_retry(_query)
+            return [{
+                "content": obj.properties.get("content"),
+                "library_name": obj.properties.get("library_name"),
+                "url": obj.properties.get("url")
+            } for obj in response.objects]
+        except Exception as e:
+            logger.error(f"Failed to search RAGDocs: {e}")
             return []
 
     def close(self):

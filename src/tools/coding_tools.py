@@ -867,3 +867,68 @@ body {
         
     except Exception as e:
         return f"Error scaffolding React application: {e}"
+
+
+def ingest_documentation(url: str, library_name: str) -> str:
+    """
+    Fetches official API documentation from a URL, extracts text, chunks it,
+    and stores it in the Weaviate RAGDocs collection to prevent LLM hallucinations.
+    """
+    import urllib.request
+    from bs4 import BeautifulSoup
+    import re
+    
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+            
+        soup = BeautifulSoup(html, "html.parser")
+        
+        # Remove script and style elements
+        for script in soup(["script", "style", "nav", "footer", "header"]):
+            script.decompose()
+            
+        text = soup.get_text(separator=' ')
+        # Clean up whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        if not text:
+            return f"Error: No readable text found at {url}"
+            
+        # Chunk text into ~1000 character segments
+        chunk_size = 1000
+        chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+        
+        from src.agents.coding_worker import get_retrieval_service
+        retriever = get_retrieval_service()
+        
+        for chunk in chunks:
+            retriever.store_rag_doc(chunk, library_name, url)
+            
+        return f"Successfully ingested documentation from {url} for library '{library_name}'. Extracted {len(chunks)} chunks."
+    except Exception as e:
+        return f"Error ingesting documentation: {e}"
+
+
+def search_docs(query: str, library_name: str = None) -> str:
+    """
+    Searches the ingested official API documentation to retrieve exact syntax
+    and prevent hallucinating fake methods.
+    """
+    try:
+        from src.agents.coding_worker import get_retrieval_service
+        retriever = get_retrieval_service()
+        
+        results = retriever.search_rag_docs(query, library_name, limit=5)
+        
+        if not results:
+            return "No official documentation found matching this query. You may need to use `ingest_documentation` first."
+            
+        formatted = []
+        for i, res in enumerate(results, 1):
+            formatted.append(f"--- Result {i} (Library: {res.get('library_name', 'Unknown')}) ---\nSource: {res.get('url', 'Unknown')}\n{res.get('content')}")
+            
+        return "\n\n".join(formatted)
+    except Exception as e:
+        return f"Error searching documentation: {e}"

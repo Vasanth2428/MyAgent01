@@ -189,3 +189,14 @@ class CodeRetrievalService:
         if hasattr(self.retriever, "search_memory"):
             return self.retriever.search_memory(query, session_id, limit)
         return []
+
+    def store_rag_doc(self, content: str, library_name: str, url: str = ""):
+        """Asynchronously stores an official documentation chunk."""
+        if hasattr(self.retriever, "store_rag_doc"):
+            self.retriever.store_rag_doc(content, library_name, url)
+
+    def search_rag_docs(self, query: str, library_name: str = None, limit: int = 5) -> List[Dict[str, str]]:
+        """Retrieves semantically similar official documentation."""
+        if hasattr(self.retriever, "search_rag_docs"):
+            return self.retriever.search_rag_docs(query, library_name, limit)
+        return []
