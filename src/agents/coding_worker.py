@@ -772,7 +772,7 @@ def get_coding_model(task: str = ""):
         logger.info(f"Binding all {len(tools)} tools to coding worker (complex query detected).")
 
     else:
-        active_tools = [read_files, search_code, create_files, modify_files, multi_replace_file_content, list_files, run_safe_commands, check_task_status, send_task_input, kill_task, delete_file, estimate_tokens, get_token_budget_remaining, fetch_file_headers, summarize_tool_output]
+        active_tools = [read_files, search_code, search_code_hybrid, create_files, modify_files, multi_replace_file_content, list_files, run_safe_commands, check_task_status, send_task_input, kill_task, delete_file, estimate_tokens, get_token_budget_remaining, fetch_file_headers, summarize_tool_output]
     
 
     provider = resolve_provider("coding_worker", "primary")

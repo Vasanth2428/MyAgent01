@@ -763,7 +763,7 @@ class WeaviateRetriever:
             return self.memory_collection.query.near_vector(
                 near_vector=query_vector,
                 limit=limit,
-                filters=wvc.query.Filter.by_property("session_id").equal(session_id) & wvc.query.Filter.by_property("success").equal(False),
+                filters=wvc.query.Filter.by_property("success").equal(False),
                 return_properties=["action_summary", "outcome"]
             )
             
