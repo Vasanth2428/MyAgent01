@@ -118,7 +118,11 @@ def _clean_messages(messages, provider):
         return messages
     cleaned = []
     for msg in messages:
-        if hasattr(msg, "copy"):
+        if hasattr(msg, "model_copy"):
+            msg_copy = msg.model_copy(deep=True)
+            if hasattr(msg_copy, "additional_kwargs") and isinstance(msg_copy.additional_kwargs, dict):
+                msg_copy.additional_kwargs = dict(msg_copy.additional_kwargs)
+        elif hasattr(msg, "copy"):
             msg_copy = msg.copy()
             if hasattr(msg_copy, "additional_kwargs") and isinstance(msg_copy.additional_kwargs, dict):
                 msg_copy.additional_kwargs = dict(msg_copy.additional_kwargs)
@@ -140,9 +144,16 @@ def _wrap_model_message_cleaning(model, provider):
     if hasattr(model, "assert_called_once") or hasattr(model, "_mock_return_value") or hasattr(model, "_mock_wraps"):
         return model
 
+    from src.core.retry import retry
+
+    def _is_rate_limit(e):
+        err_str = str(e).lower()
+        return "429" in err_str or "rate limit" in err_str or "quota" in err_str or "too many requests" in err_str
+
     # Wrap real model instances
     orig_invoke = getattr(model, "invoke", None)
     if orig_invoke and not hasattr(orig_invoke, "_is_wrapped"):
+        @retry(retries=3, backoff=2.0, jitter=0.5, is_transient_fn=_is_rate_limit, logger_name="RAG.ModelProvider")
         def clean_invoke(input_val, *args, **kwargs):
             if isinstance(input_val, list):
                 input_val = _clean_messages(input_val, provider)
@@ -152,6 +163,7 @@ def _wrap_model_message_cleaning(model, provider):
 
     orig_ainvoke = getattr(model, "ainvoke", None)
     if orig_ainvoke and not hasattr(orig_ainvoke, "_is_wrapped"):
+        @retry(retries=3, backoff=2.0, jitter=0.5, is_transient_fn=_is_rate_limit, logger_name="RAG.ModelProvider")
         async def clean_ainvoke(input_val, *args, **kwargs):
             if isinstance(input_val, list):
                 input_val = _clean_messages(input_val, provider)

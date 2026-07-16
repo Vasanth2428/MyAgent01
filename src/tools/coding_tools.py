@@ -551,9 +551,15 @@ def execute_command(command: str, wait_ms_before_async: int = 2000) -> str:
         _task_outputs[task_id] = []
         
         def _read_output():
-            for line in iter(proc.stdout.readline, ''):
-                if line:
-                    _task_outputs[task_id].append(line)
+            try:
+                for line in iter(proc.stdout.readline, ''):
+                    if line:
+                        _task_outputs[task_id].append(line)
+            finally:
+                if proc.stdout:
+                    proc.stdout.close()
+                if proc.stdin:
+                    proc.stdin.close()
         threading.Thread(target=_read_output, daemon=True).start()
         
         try:
@@ -626,6 +632,10 @@ def kill_task(task_id: str) -> str:
         except psutil.NoSuchProcess:
             pass
         proc.kill()
+        if proc.stdout:
+            proc.stdout.close()
+        if proc.stdin:
+            proc.stdin.close()
         return _build_response("ok", "Task killed")
     except Exception as e:
         return _build_error_response(str(e))

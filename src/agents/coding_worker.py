@@ -1620,23 +1620,16 @@ def coding_worker_node(state: dict) -> dict:
             broken_out = True
             break
             
-        # Infinite Loop Detection & Reflection (Critic)
+        # Infinite Loop Detection (Hard Circuit Breaker)
         import json
         try:
             current_signature = json.dumps([{"name": tc["name"], "args": tc["args"]} for tc in tool_calls], sort_keys=True)
             tool_history.append(current_signature)
             if len(tool_history) >= 3 and tool_history[-1] == tool_history[-2] == tool_history[-3]:
-                print(f"[CRITIC] Infinite loop detected for tool calls.")
-                # Inject critic observation instead of executing the tool
-                agent_messages.append(ToolMessage(
-                    content="[CRITICAL SYSTEM INTERRUPT] You are stuck in an infinite loop repeating the exact same action 3 times in a row without success. You MUST use a different strategy, try a completely different tool, or ask the user for help. DO NOT repeat this action.",
-                    tool_call_id=tool_calls[0]["id"],
-                    name=tool_calls[0]["name"]
-                ))
-                # Add dummy responses for any other tools in the batch to avoid LangChain validation errors
-                for tc in tool_calls[1:]:
-                    agent_messages.append(ToolMessage(content="Skipped due to infinite loop interrupt.", tool_call_id=tc["id"], name=tc["name"]))
-                continue
+                print(f"[CRITIC GUARDRAIL] Infinite loop detected. Hard blocking.")
+                final_explanation = "Task forcefully aborted due to infinite loop: repeated the exact same failing tool calls 3 times without progressing. The current approach is not working."
+                broken_out = True
+                break
         except Exception as e:
             logger.warning(f"Error checking tool history for loop detection: {e}")
 
