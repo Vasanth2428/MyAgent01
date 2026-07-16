@@ -83,6 +83,12 @@ class WeaviateRetriever:
 
         from src.core.retry import retry
 
+        # Detect if we should connect to a local Docker instance
+        _is_local = os.getenv("WEAVIATE_LOCAL", "").lower() in ("true", "1", "yes")
+        if not _is_local and self.url:
+            _clean_check = self.url.split("://", 1)[-1].split(":")[0].split("/")[0]
+            _is_local = _clean_check in ("localhost", "127.0.0.1", "0.0.0.0")
+
         @retry(
             retries=3,
             backoff=1.0,
@@ -90,6 +96,32 @@ class WeaviateRetriever:
             logger_name="RAG.Retriever"
         )
         def _connect():
+            # --- Local Docker connection (no API key, no TLS) ---
+            if _is_local:
+                # Parse optional custom ports from WEAVIATE_URL (e.g. http://localhost:8080)
+                local_http_port = 8080
+                local_grpc_port = 50051
+                local_host = "localhost"
+                if self.url:
+                    _parsed = self.url.split("://", 1)[-1]
+                    _host_part = _parsed.split("/")[0]
+                    if ":" in _host_part:
+                        local_host, _port_str = _host_part.split(":", 1)
+                        try:
+                            local_http_port = int(_port_str)
+                        except ValueError:
+                            pass
+                local_grpc_port = int(os.getenv("WEAVIATE_GRPC_PORT", str(local_grpc_port)))
+                logger.info(f"Connecting to LOCAL Weaviate at {local_host}:{local_http_port} (gRPC: {local_grpc_port})")
+                return weaviate.connect_to_local(
+                    host=local_host,
+                    port=local_http_port,
+                    grpc_port=local_grpc_port,
+                    headers=hf_headers,
+                    additional_config=config,
+                )
+
+            # --- Weaviate Cloud connection ---
             clean_url = self.url
             if "://" in clean_url:
                 clean_url = clean_url.split("://", 1)[1]
