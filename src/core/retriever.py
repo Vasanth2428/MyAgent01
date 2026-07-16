@@ -162,9 +162,11 @@ class WeaviateRetriever:
         try:
             self.client = _connect()
             self._connected = True
+            self._is_local_weaviate = _is_local
         except Exception as e:
-            logger.error(f"Failed to connect to Weaviate Cloud after 3 attempts: {e}")
+            logger.error(f"Failed to connect to Weaviate after 3 attempts: {e}")
             self._connected = False
+            self._is_local_weaviate = _is_local
             logger.warning("Starting in degraded mode - database operations will fail gracefully.")
 
         self.code_collection = None
@@ -172,29 +174,52 @@ class WeaviateRetriever:
         if self.client and self._connected:
             try:
                 if not self.client.collections.exists("RAGKnowledge"):
-                    logger.info("Initializing 'RAGKnowledge' collection with text2vec-huggingface...")
-                    self.client.collections.create(
-                        name="RAGKnowledge",
-                        vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_huggingface(
-                            model="sentence-transformers/all-MiniLM-L6-v2",
-                            vectorize_collection_name=False,
-                        ),
-                        vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
-                        properties=[
-                            wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
-                            wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
-                            wvc.config.Property(name="source", data_type=wvc.config.DataType.TEXT),
-                            wvc.config.Property(name="content_hash", data_type=wvc.config.DataType.TEXT),
-                            wvc.config.Property(name="upload_timestamp", data_type=wvc.config.DataType.NUMBER),
-                            wvc.config.Property(name="document_id", data_type=wvc.config.DataType.TEXT),
-                            wvc.config.Property(name="symbol_name", data_type=wvc.config.DataType.TEXT),
-                            wvc.config.Property(name="symbol_type", data_type=wvc.config.DataType.TEXT),
-                            wvc.config.Property(name="filepath", data_type=wvc.config.DataType.TEXT),
-                            wvc.config.Property(name="start_line", data_type=wvc.config.DataType.NUMBER),
-                            wvc.config.Property(name="end_line", data_type=wvc.config.DataType.NUMBER),
-                            wvc.config.Property(name="is_code", data_type=wvc.config.DataType.BOOL),
-                        ]
-                    )
+                    if _is_local:
+                        # Local Docker: no vectorizer modules available, we supply vectors ourselves
+                        logger.info("Initializing 'RAGKnowledge' collection with vectorizer=none (local mode)...")
+                        self.client.collections.create(
+                            name="RAGKnowledge",
+                            vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                            properties=[
+                                wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
+                                wvc.config.Property(name="source", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="content_hash", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="upload_timestamp", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="document_id", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="symbol_name", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="symbol_type", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="filepath", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="start_line", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="end_line", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="is_code", data_type=wvc.config.DataType.BOOL),
+                            ]
+                        )
+                    else:
+                        # Cloud: use text2vec-huggingface server-side vectorizer
+                        logger.info("Initializing 'RAGKnowledge' collection with text2vec-huggingface...")
+                        self.client.collections.create(
+                            name="RAGKnowledge",
+                            vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_huggingface(
+                                model="sentence-transformers/all-MiniLM-L6-v2",
+                                vectorize_collection_name=False,
+                            ),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                            properties=[
+                                wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
+                                wvc.config.Property(name="source", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="content_hash", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="upload_timestamp", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="document_id", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="symbol_name", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="symbol_type", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="filepath", data_type=wvc.config.DataType.TEXT),
+                                wvc.config.Property(name="start_line", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="end_line", data_type=wvc.config.DataType.NUMBER),
+                                wvc.config.Property(name="is_code", data_type=wvc.config.DataType.BOOL),
+                            ]
+                        )
 
                 self.collection = self.client.collections.get("RAGKnowledge")
                 if self.client.collections.exists("RAGCode"):

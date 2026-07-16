@@ -1,8 +1,7 @@
-version: '3.8'
 
 services:
   weaviate:
-    image: cr.weaviate.io/semitechnologies/weaviate:1.28.4
+    image: semitechnologies/weaviate:1.28.4
     container_name: weaviate-local
     restart: unless-stopped
     ports:
