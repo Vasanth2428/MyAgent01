@@ -233,7 +233,7 @@ def create_files(filepath: str, content: str) -> str:
             return f"Error creating parent directory: {e}"
             
     filename = os.path.basename(filepath)
-    if filename.endswith(".py"):
+    if filename.lower().endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
         ok, msg = validate_syntax(content, filepath)
         if not ok:
             return f"Error: {msg}"
@@ -309,6 +309,11 @@ def edit_code_file(filepath: str, target: str, replacement: str) -> str:
     
     if not target:
         backup_file(filepath)
+        from src.core.code.validation import validate_syntax
+        if filepath.lower().endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
+            ok, msg = validate_syntax(replacement, filepath)
+            if not ok:
+                return f"Error: Validation failed on overwritten file. {msg}"
         try:
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write(replacement)
@@ -325,6 +330,11 @@ def edit_code_file(filepath: str, target: str, replacement: str) -> str:
             fuzzy_content = try_fuzzy_replace(content, target, replacement)
             if fuzzy_content is not None:
                 backup_file(filepath)
+                from src.core.code.validation import validate_syntax
+                if filepath.lower().endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
+                    ok, msg = validate_syntax(fuzzy_content, filepath)
+                    if not ok:
+                        return f"Error: Validation failed on fuzzy edited file. {msg}"
                 with open(abs_path, "w", encoding="utf-8") as f:
                     f.write(fuzzy_content)
                 return f"Success: Modified '{filepath}' successfully using relaxed matching."
@@ -344,6 +354,13 @@ def edit_code_file(filepath: str, target: str, replacement: str) -> str:
             
         backup_file(filepath)
         new_content = content.replace(target, replacement, 1)
+        
+        from src.core.code.validation import validate_syntax
+        if filepath.lower().endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
+            ok, msg = validate_syntax(new_content, filepath)
+            if not ok:
+                return f"Error: Validation failed on edited file. {msg}"
+                
         with open(abs_path, "w", encoding="utf-8") as f:
             f.write(new_content)
             
@@ -392,8 +409,15 @@ def _multi_replace_file_content(filepath: str, chunks: list) -> str:
             new_lines_str = target_lines.replace(target, replacement, 1)
             lines = lines[:start_line] + [new_lines_str] + lines[end_line:]
             
+        new_content = "".join(lines)
+        from src.core.code.validation import validate_syntax
+        if filepath.lower().endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
+            ok, msg = validate_syntax(new_content, filepath)
+            if not ok:
+                return f"Error: Validation failed on multi-edited file. {msg}"
+                
         with open(abs_path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+            f.write(new_content)
             
         return f"Success: Modified '{filepath}' successfully with {len(chunks)} chunk(s)."
     except Exception as e:

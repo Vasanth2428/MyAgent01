@@ -51,6 +51,7 @@ class CodeRetrievalService:
         if not self.registry.load_index():
             self.indexer.index_repository()
             self.registry.save_index()
+            self._push_chunks_to_weaviate()
 
     def sync_index(self) -> None:
         """Forces a directory scan and persists the updated index on a background thread."""
@@ -60,12 +61,35 @@ class CodeRetrievalService:
                 logger.info("Synchronizing code index on background thread...")
                 self.indexer.index_repository()
                 self.registry.save_index()
+                self._push_chunks_to_weaviate()
                 logger.info("Code index synchronization complete.")
             except Exception as e:
                 logger.error(f"Failed background index synchronization: {e}")
                 
         sync_thread = threading.Thread(target=_sync, daemon=True)
         sync_thread.start()
+
+    def _push_chunks_to_weaviate(self) -> None:
+        """Collects semantic chunks from parsed symbols and pushes them to Weaviate."""
+        if not hasattr(self.retriever, "add_code_chunks"):
+            return
+            
+        logger.info("Extracting semantic chunks for Weaviate RAG index...")
+        chunks = []
+        for sym in self.indexer.symbol_table.get_all_symbols():
+            if sym.get("text"):
+                chunks.append({
+                    "text": sym["text"],
+                    "filepath": sym.get("filepath", ""),
+                    "symbol_name": sym.get("name", ""),
+                    "symbol_type": sym.get("type", ""),
+                    "start_line": sym.get("start_line", 1),
+                    "end_line": sym.get("end_line", 1),
+                })
+        
+        if chunks:
+            self.retriever.add_code_chunks(chunks)
+            logger.info(f"Pushed {len(chunks)} semantic code chunks to Weaviate.")
 
     def search_symbols(self, query: str) -> List[Dict[str, Any]]:
         """Fuzzy searches the symbol table for matching functions, methods, or classes."""
