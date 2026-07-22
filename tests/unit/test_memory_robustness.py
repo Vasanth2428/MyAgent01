@@ -1,3 +1,4 @@
+import asyncio
 from src.core.memory import ConversationMemory
 from src.core.engine import count_tokens
 

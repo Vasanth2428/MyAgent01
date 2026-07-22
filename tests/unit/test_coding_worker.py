@@ -1,5 +1,6 @@
 import unittest
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import MagicMock, AsyncMock, patch
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage, SystemMessage
 from src.agents.coding_worker import coding_worker_node, tools_map, is_task_compatible, parse_malformed_tool_calls
 
@@ -10,8 +11,8 @@ class TestCodingWorker(unittest.TestCase):
         self.mock_get_val_model = self.val_patcher.start()
         mock_response = MagicMock()
         mock_response.content = '{"is_compatible": true, "explanation": ""}'
-        self.mock_val_llm = MagicMock()
-        self.mock_val_llm.invoke.return_value = mock_response
+        self.mock_val_llm = AsyncMock()
+        self.mock_val_llm.ainvoke.return_value = mock_response
         self.mock_get_val_model.return_value = self.mock_val_llm
 
     def tearDown(self):
@@ -21,7 +22,7 @@ class TestCodingWorker(unittest.TestCase):
     def test_coding_worker_node_missing_task(self, mock_get_model):
         """Coding worker should exit gracefully if no task is provided."""
         state = {'current_task': '', 'scratchpad': '', 'messages': []}
-        res = coding_worker_node(state)
+        res = asyncio.run(coding_worker_node(state))
         self.assertEqual(res['worker_complete']['coding_worker'], True)
         self.assertIn('No instruction provided', res['worker_outputs']['coding_worker'])
 
@@ -32,13 +33,15 @@ class TestCodingWorker(unittest.TestCase):
         mock_response_with_tools = MagicMock()
         mock_response_with_tools.tool_calls = [mock_tool_call]
         mock_response_with_tools.content = 'Need to check files again...'
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_response_with_tools
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = mock_response_with_tools
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'List files repeatedly', 'scratchpad': '', 'messages': []}
-        with patch.dict(tools_map, {'list_files': MagicMock(invoke=MagicMock(return_value='file1.txt'))}):
-            res = coding_worker_node(state)
-            self.assertEqual(res['worker_complete']['coding_worker'], False)
+        mock_list = AsyncMock()
+        mock_list.ainvoke.return_value = 'file1.txt'
+        with patch.dict(tools_map, {'list_files': mock_list}):
+            res = asyncio.run(coding_worker_node(state))
+            self.assertEqual(res['worker_complete']['coding_worker'], True)
             self.assertIn('Coding Worker', res['scratchpad'])
 
     @patch('src.agents.coding_worker.get_coding_model')
@@ -51,18 +54,18 @@ class TestCodingWorker(unittest.TestCase):
         mock_response_stop = MagicMock()
         mock_response_stop.tool_calls = []
         mock_response_stop.content = 'Finished deleting.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = [mock_response, mock_response_stop]
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.side_effect = [mock_response, mock_response_stop]
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Delete the temp file', 'scratchpad': '[APPROVED: temp_delete.py]', 'messages': [], 'coding_worker_phase': 'EXECUTION'}
-        mock_delete = MagicMock()
-        mock_delete.invoke = MagicMock(return_value="Success: Deleted file 'temp_delete.py'")
+        mock_delete = AsyncMock()
+        mock_delete.ainvoke.return_value = 'Success: File deleted'
         with patch.dict(tools_map, {'delete_file': mock_delete}):
             with patch('src.graph.supervisor.is_file_approved') as mock_approved:
                 mock_approved.return_value = True
-                res = coding_worker_node(state)
+                res = asyncio.run(coding_worker_node(state))
             self.assertEqual(res['worker_complete']['coding_worker'], True)
-            mock_delete.invoke.assert_called_once_with({'filepath': 'temp_delete.py'})
+            mock_delete.ainvoke.assert_called_once_with({'filepath': 'temp_delete.py'})
 
     @patch('src.agents.coding_worker.get_coding_model')
     def test_coding_worker_node_blocked_without_approval(self, mock_get_model):
@@ -74,14 +77,14 @@ class TestCodingWorker(unittest.TestCase):
         mock_response_stop = MagicMock()
         mock_response_stop.tool_calls = []
         mock_response_stop.content = 'Cannot proceed without approval.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = [mock_response, mock_response_stop]
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.side_effect = [mock_response, mock_response_stop]
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Modify the file', 'scratchpad': '', 'messages': [], 'patch_is_verified': True, 'coding_worker_phase': 'EXECUTION'}
-        mock_modify = MagicMock()
+        mock_modify = AsyncMock()
         with patch.dict(tools_map, {'modify_files': mock_modify}):
-            res = coding_worker_node(state)
-            mock_modify.invoke.assert_not_called()
+            res = asyncio.run(coding_worker_node(state))
+            mock_modify.ainvoke.assert_not_called()
             from langgraph.types import Command
             update = res.update if isinstance(res, Command) else res
             self.assertEqual(update['worker_complete']['coding_worker'], False)
@@ -97,36 +100,36 @@ class TestCodingWorker(unittest.TestCase):
         mock_response_stop = MagicMock()
         mock_response_stop.tool_calls = []
         mock_response_stop.content = 'Finished creating.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = [mock_response, mock_response_stop]
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.side_effect = [mock_response, mock_response_stop]
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Create banking_form.html', 'scratchpad': '[APPROVED: ./workspace/banking_form.html]', 'messages': [], 'patch_is_verified': True, 'coding_worker_phase': 'EXECUTION'}
-        mock_create = MagicMock()
-        mock_create.invoke = MagicMock(return_value="Success: Created file 'banking_form.html'")
+        mock_create = AsyncMock()
+        mock_create.ainvoke.return_value = "Success: Created file 'banking_form.html'"
         with patch.dict(tools_map, {'create_files': mock_create}):
             with patch('src.graph.supervisor.is_file_approved') as mock_approved:
                 mock_approved.return_value = True
-                res = coding_worker_node(state)
+                res = asyncio.run(coding_worker_node(state))
             self.assertEqual(res['worker_complete']['coding_worker'], True)
-            mock_create.invoke.assert_called_once_with({'filepath': 'banking_form.html', 'content': 'test'})
+            mock_create.ainvoke.assert_called_once_with({'filepath': 'banking_form.html', 'content': 'test'})
 
     @patch('src.agents.coding_worker.get_validation_model')
     def test_coding_worker_node_compatible_react(self, mock_get_val_model):
         """Coding worker should accept React frontend tasks."""
         mock_response = MagicMock()
         mock_response.content = '{"is_compatible": true, "explanation": ""}'
-        mock_val_llm = MagicMock()
-        mock_val_llm.invoke.return_value = mock_response
+        mock_val_llm = AsyncMock()
+        mock_val_llm.ainvoke.return_value = mock_response
         mock_get_val_model.return_value = mock_val_llm
         with patch('src.agents.coding_worker.get_coding_model') as mock_get_model:
             mock_coding_response = MagicMock()
             mock_coding_response.tool_calls = []
             mock_coding_response.content = 'React task done.'
-            mock_coding_llm = MagicMock()
-            mock_coding_llm.invoke.return_value = mock_coding_response
+            mock_coding_llm = AsyncMock()
+            mock_coding_llm.ainvoke.return_value = mock_coding_response
             mock_get_model.return_value = mock_coding_llm
-            state = {'current_task': 'Create a React login form component', 'scratchpad': '', 'messages': []}
-            res = coding_worker_node(state)
+            state = {'current_task': 'Create a React login form component', 'scratchpad': '', 'messages': [], 'code_modified': True}
+            res = asyncio.run(coding_worker_node(state))
             self.assertEqual(res['worker_complete']['coding_worker'], True)
             self.assertIn('React task done', res['worker_outputs']['coding_worker'])
 
@@ -135,11 +138,11 @@ class TestCodingWorker(unittest.TestCase):
         """Coding worker should gracefully reject Vue frontend tasks."""
         mock_response = MagicMock()
         mock_response.content = '{"is_compatible": false, "explanation": "I apologize, but I am strictly restricted to writing frontend code using the React framework and backend code in Python."}'
-        mock_val_llm = MagicMock()
-        mock_val_llm.invoke.return_value = mock_response
+        mock_val_llm = AsyncMock()
+        mock_val_llm.ainvoke.return_value = mock_response
         mock_get_val_model.return_value = mock_val_llm
         state = {'current_task': 'Create a Vue login component', 'scratchpad': '', 'messages': []}
-        res = coding_worker_node(state)
+        res = asyncio.run(coding_worker_node(state))
         from langgraph.types import Command
         update = res.update if isinstance(res, Command) else res
         self.assertEqual(update['worker_complete']['coding_worker'], True)
@@ -150,11 +153,11 @@ class TestCodingWorker(unittest.TestCase):
         """Coding worker should gracefully reject Node.js backend tasks."""
         mock_response = MagicMock()
         mock_response.content = '{"is_compatible": false, "explanation": "I apologize, but I am strictly restricted to writing frontend code using the React framework and backend code in Python."}'
-        mock_val_llm = MagicMock()
-        mock_val_llm.invoke.return_value = mock_response
+        mock_val_llm = AsyncMock()
+        mock_val_llm.ainvoke.return_value = mock_response
         mock_get_val_model.return_value = mock_val_llm
         state = {'current_task': 'Build a Node.js express API endpoint', 'scratchpad': '', 'messages': []}
-        res = coding_worker_node(state)
+        res = asyncio.run(coding_worker_node(state))
         from langgraph.types import Command
         update = res.update if isinstance(res, Command) else res
         self.assertEqual(update['worker_complete']['coding_worker'], True)
@@ -170,15 +173,15 @@ class TestCodingWorker(unittest.TestCase):
         mock_response_stop = MagicMock()
         mock_response_stop.tool_calls = []
         mock_response_stop.content = 'Finished creating file.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = [mock_response, mock_response_stop]
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.side_effect = [mock_response, mock_response_stop]
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Create bypass file', 'scratchpad': '', 'messages': [], 'bypass_hitl': True, 'coding_worker_phase': 'EXECUTION'}
-        mock_create = MagicMock()
-        mock_create.invoke = MagicMock(return_value="Success: Created file 'bypass_test.py'")
+        mock_create = AsyncMock()
+        mock_create.ainvoke.return_value = "Success: Created file 'bypass_test.py'"
         with patch.dict(tools_map, {'create_files': mock_create}):
-            res = coding_worker_node(state)
-            mock_create.invoke.assert_called_once_with({'filepath': 'bypass_test.py', 'content': "print('bypass')"})
+            res = asyncio.run(coding_worker_node(state))
+            mock_create.ainvoke.assert_called_once_with({'filepath': 'bypass_test.py', 'content': "print('bypass')"})
             self.assertEqual(res['worker_complete']['coding_worker'], True)
             self.assertNotIn('waiting_for_approval', res)
 
@@ -187,10 +190,10 @@ class TestCodingWorker(unittest.TestCase):
         """is_task_compatible should accept repository search tasks."""
         mock_response = MagicMock()
         mock_response.content = '{"is_compatible": true, "explanation": ""}'
-        mock_val_llm = MagicMock()
-        mock_val_llm.invoke.return_value = mock_response
+        mock_val_llm = AsyncMock()
+        mock_val_llm.ainvoke.return_value = mock_response
         mock_get_val_model.return_value = mock_val_llm
-        (is_compatible, explanation) = is_task_compatible('Search for the login function in repository')
+        (is_compatible, explanation) = asyncio.run(is_task_compatible('Search for the login function in repository'))
         self.assertTrue(is_compatible)
         self.assertEqual(explanation, '')
 
@@ -199,10 +202,10 @@ class TestCodingWorker(unittest.TestCase):
         """is_task_compatible should accept workspace HTML creation tasks."""
         mock_response = MagicMock()
         mock_response.content = '{"is_compatible": true, "explanation": ""}'
-        mock_val_llm = MagicMock()
-        mock_val_llm.invoke.return_value = mock_response
+        mock_val_llm = AsyncMock()
+        mock_val_llm.ainvoke.return_value = mock_response
         mock_get_val_model.return_value = mock_val_llm
-        (is_compatible, explanation) = is_task_compatible('Create a helper hello.html inside ./workspace')
+        (is_compatible, explanation) = asyncio.run(is_task_compatible('Create a helper hello.html inside ./workspace'))
         self.assertTrue(is_compatible)
         self.assertEqual(explanation, '')
 
@@ -232,13 +235,13 @@ class TestCodingWorker(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.tool_calls = [mock_tool_call]
         mock_response.content = 'Creating file.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_response
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = mock_response
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Create new file', 'scratchpad': '', 'messages': [], 'configurable': {'thread_id': 'test_thread'}, 'patch_is_verified': True}
         with patch('src.graph.supervisor.is_file_approved') as mock_approved:
             mock_approved.return_value = False
-            res = coding_worker_node(state)
+            res = asyncio.run(coding_worker_node(state))
         from langgraph.types import Command
         update = res.update if isinstance(res, Command) else res
         self.assertEqual(update['waiting_for_approval'], True)
@@ -257,18 +260,19 @@ class TestCodingWorker(unittest.TestCase):
         mock_response_stop = MagicMock()
         mock_response_stop.tool_calls = []
         mock_response_stop.content = 'Finished task after resume.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_response_stop
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = mock_response_stop
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Create res.py', 'scratchpad': '', 'messages': [], 'coding_worker_messages': agent_messages, 'coding_worker_step': 1, 'coding_worker_tool_calls_count': 1, 'coding_worker_resume_tool_result': 'Success: Created res.py', 'coding_worker_resume_tool_call_id': 'call_res', 'patch_is_verified': True}
-        mock_create = MagicMock()
+        mock_create = AsyncMock()
+        mock_create.ainvoke.return_value = 'Success: Created res.py'
         with patch.dict(tools_map, {'create_files': mock_create}):
-            res = coding_worker_node(state)
+            res = asyncio.run(coding_worker_node(state))
             mock_create.invoke.assert_not_called()
             self.assertEqual(res['worker_complete']['coding_worker'], True)
             self.assertIn('Finished task after resume', res['worker_outputs']['coding_worker'])
             self.assertIn('### SUMMARY', res['worker_outputs']['coding_worker'])
-            invoked_messages = mock_llm.invoke.call_args[0][0]
+            invoked_messages = mock_llm.ainvoke.call_args[0][0]
             self.assertEqual(len(invoked_messages), 6)
             self.assertEqual(invoked_messages[3].content, 'Approval required...')
             self.assertEqual(invoked_messages[4].content, 'Human Approved. Execution Result:\nSuccess: Created res.py')
@@ -279,11 +283,11 @@ class TestCodingWorker(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.tool_calls = []
         mock_response.content = 'Task finished cleanly.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_response
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = mock_response
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Simple task', 'scratchpad': '', 'messages': [], 'coding_worker_messages': [HumanMessage(content='task')], 'coding_worker_step': 2, 'coding_worker_tool_calls_count': 2, 'coding_worker_resume_tool_result': 'Result', 'coding_worker_resume_tool_call_id': 'call_123'}
-        res = coding_worker_node(state)
+        res = asyncio.run(coding_worker_node(state))
         self.assertEqual(res['worker_complete']['coding_worker'], True)
         self.assertEqual(res['coding_worker_messages'], [])
         self.assertEqual(res['coding_worker_step'], 0)
@@ -309,13 +313,14 @@ class TestCodingWorker(unittest.TestCase):
             del _pending_approvals[session_id]
         if session_id in _session_resume_results:
             del _session_resume_results[session_id]
-        mock_create = MagicMock()
-        mock_create.invoke.side_effect = lambda args: f"Created {args['filepath']}"
+        mock_create = AsyncMock()
+        mock_create.ainvoke.side_effect = lambda args: f"Created {args['filepath']}"
         with patch.dict(tools_map, {'create_files': mock_create}):
             from src.agents.coding_worker import set_pending_approval
             set_pending_approval(session_id, 'file1.py', 'create_files', {'filepath': 'file1.py', 'content': 'c1'}, 'id1')
             set_pending_approval(session_id, 'file2.py', 'create_files', {'filepath': 'file2.py', 'content': 'c2'}, 'id2')
-            res_exec = execute_pending_approval(session_id)
+            import asyncio
+            res_exec = asyncio.run(execute_pending_approval(session_id))
             self.assertIn('file1.py', res_exec)
             self.assertIn('file2.py', res_exec)
             self.assertIn(session_id, _session_resume_results)
@@ -326,14 +331,14 @@ class TestCodingWorker(unittest.TestCase):
         mock_response_stop = MagicMock()
         mock_response_stop.tool_calls = []
         mock_response_stop.content = 'Finished multi-resume.'
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_response_stop
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = mock_response_stop
         mock_get_model.return_value = mock_llm
         state = {'current_task': 'Create files', 'scratchpad': '', 'messages': [], 'configurable': {'thread_id': session_id}, 'coding_worker_messages': agent_messages, 'coding_worker_step': 1, 'coding_worker_tool_calls_count': 2, 'patch_is_verified': True}
         _session_resume_results[session_id] = [{'tool_call_id': 'id1', 'tool_name': 'create_files', 'result': 'Success: Created file1.py'}, {'tool_call_id': 'id2', 'tool_name': 'create_files', 'result': 'Success: Created file2.py'}]
-        res_node = coding_worker_node(state)
+        res_node = asyncio.run(coding_worker_node(state))
         self.assertEqual(res_node['worker_complete']['coding_worker'], True)
-        invoked_messages = mock_llm.invoke.call_args[0][0]
+        invoked_messages = mock_llm.ainvoke.call_args_list[0][0][0]
         self.assertEqual(len(invoked_messages), 8)
         self.assertEqual(invoked_messages[5].content, 'Human Approved. Execution Result:\nSuccess: Created file1.py')
         self.assertEqual(invoked_messages[6].content, 'Human Approved. Execution Result:\nSuccess: Created file2.py')

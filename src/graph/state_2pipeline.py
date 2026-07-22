@@ -17,10 +17,19 @@ def add_messages(left: List[BaseMessage], right: List[BaseMessage]) -> List[Base
     if len(combined) > MAX_MESSAGES:
         start_idx = len(combined) - MAX_MESSAGES
         # Ensure we don't sever a ToolMessage from its initiating AIMessage
-        from langchain_core.messages import ToolMessage
+        from langchain_core.messages import ToolMessage, SystemMessage
         while start_idx > 0 and isinstance(combined[start_idx], ToolMessage):
             start_idx -= 1
-        return combined[start_idx:]
+            
+        truncated_count = start_idx
+        retained_messages = combined[start_idx:]
+        
+        # Inject a context marker for the LLM
+        if truncated_count > 0:
+            marker = SystemMessage(content=f"[SYSTEM] {truncated_count} older messages were archived to preserve context window.")
+            return [marker] + retained_messages
+            
+        return retained_messages
         
     return combined
 
@@ -40,13 +49,17 @@ def merge_dicts(left: dict, right: dict) -> dict:
     merged.update(right)
     return merged
 
+def extend_list(left: list, right: list) -> list:
+    """Reducer that safely concatenates two lists."""
+    return (left or []) + (right or [])
+
 # Lightweight state schema - minimal tracking, relies on message history
 class AgentState(TypedDict):
     session_id: str
     messages: Annotated[List[BaseMessage], add_messages]
     next_agent: Annotated[str, update_next_agent]
     current_task: str
-    parallel_tasks: List[str]
+    parallel_tasks: Annotated[List[Dict[str, str]], extend_list]
     steps_remaining: int
     plan: List[str]
     retry_counter: int
@@ -72,7 +85,6 @@ class AgentState(TypedDict):
     
     bypass_hitl: Optional[bool]
     patch_is_verified: bool
-    active_project: Optional[str]
     final_answer: str
     
     # Missing fields for worker coordination
@@ -92,8 +104,8 @@ class AgentState(TypedDict):
     # Durable workflow records. These are checkpointed with the graph state and
     # deliberately kept separate from the ephemeral scratchpad.
     project_context: Dict[str, Any]
-    task_history: List[Dict[str, Any]]
-    task_events: List[Dict[str, Any]]
+    task_history: Annotated[List[Dict[str, Any]], extend_list]
+    task_events: Annotated[List[Dict[str, Any]], extend_list]
     critic_feedback: Dict[str, Any]
     current_task_id: Optional[str]
     current_task_domain: str
@@ -126,7 +138,6 @@ def create_initial_state(messages: List[BaseMessage], bypass_hitl: bool = False)
         "coding_worker_resume_tool_result": None,
         "coding_worker_resume_tool_call_id": None,
         "patch_is_verified": False,
-        "active_project": None,
         "retry_counter": 0,
         "worker_outputs": {},
         "worker_complete": {},

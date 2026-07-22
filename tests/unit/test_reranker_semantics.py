@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from src.core.reranker import NeuralReranker
 

@@ -25,7 +25,7 @@ def get_reasoning_model():
     )
 
 
-def synthesizer_node(state: dict) -> dict:
+async def synthesizer_node(state: dict) -> dict:
     """
     Synthesizes the final response using the original query and accumulated scratchpad findings.
     Checks if all planned tasks are complete before finishing.
@@ -115,7 +115,7 @@ Formatting Guidelines:
 
     model = get_reasoning_model()
     try:
-        response = model.invoke([
+        response = await model.ainvoke([
             SystemMessage(content="You are a helpful AI assistant synthesizing information."),
             HumanMessage(content=synthesis_prompt)
         ])

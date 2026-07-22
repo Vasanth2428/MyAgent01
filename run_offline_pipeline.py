@@ -31,7 +31,7 @@ class PredefinedSupervisor:
     def __init__(self):
         self.call_count = 0
         
-    def invoke(self, messages, *args, **kwargs):
+    async def ainvoke(self, messages, *args, **kwargs):
         self.call_count += 1
         from src.graph.supervisor import SupervisorRouting
         print(f"[MOCK SUPERVISOR] invoke count: {self.call_count}")
@@ -93,7 +93,7 @@ class PredefinedSupervisor:
 
 
 class PredefinedCodingWorker:
-    def invoke(self, messages, *args, **kwargs):
+    async def ainvoke(self, messages, *args, **kwargs):
         from langchain_core.messages import AIMessage
         task = ""
         # Get the very first HumanMessage as the main task
@@ -328,37 +328,38 @@ def mock_build_model_with_fallback(
     structured_output: type = None,
     **kwargs
 ):
-    mock_model = MagicMock()
+    from unittest.mock import AsyncMock
+    mock_model = AsyncMock()
     print(f"[MOCK LLM] build_model_with_fallback invoked for role: {role}")
     
     if role == "supervisor":
-        mock_model.invoke.side_effect = supervisor_mock_instance.invoke
+        mock_model.ainvoke.side_effect = supervisor_mock_instance.ainvoke
     elif role == "coding_worker":
-        mock_model.invoke.side_effect = coding_worker_mock_instance.invoke
+        mock_model.ainvoke.side_effect = coding_worker_mock_instance.ainvoke
     elif role == "code_critic_worker":
-        mock_model.invoke.return_value = AIMessage(
+        mock_model.ainvoke.return_value = AIMessage(
             content="Code review for smart_home/backend/main.py: Checked syntax and SQL schemas. All clean.",
             name="code_critic_worker"
         )
     elif role == "critic_worker":
-        mock_model.invoke.return_value = AIMessage(
+        mock_model.ainvoke.return_value = AIMessage(
             content="Design audit: Typography and glassmorphic aesthetics are correctly integrated.",
             name="critic_worker"
         )
     elif role == "web_worker":
-        mock_model.invoke.return_value = AIMessage(
+        mock_model.ainvoke.return_value = AIMessage(
             content="Search results show: Glassmorphism layout and Outfit/Inter fonts are premium smart home UI trends.",
             name="web_worker"
         )
     elif role == "scraper_worker":
-        mock_model.invoke.return_value = AIMessage(
+        mock_model.ainvoke.return_value = AIMessage(
             content="Scraped info: Smart home energy trackers should use interactive toggles.",
             name="scraper_worker"
         )
     elif role == "synthesizer":
         global synthesized_successfully
         synthesized_successfully = True
-        mock_model.invoke.return_value = AIMessage(
+        mock_model.ainvoke.return_value = AIMessage(
             content="Summary: Smart Home Automation Dashboard successfully created and validated. Backend uses FastAPI and SQLite. Frontend uses React and premium glassmorphic UI.",
             name="synthesizer"
         )
@@ -371,7 +372,7 @@ def mock_build_model_with_fallback(
         coding_worker_mock_instance.architect_calls += 1
         
         if coding_worker_mock_instance.architect_calls == 1:
-            mock_model.invoke.return_value = ArchitectureBlueprint(
+            mock_model.ainvoke.return_value = ArchitectureBlueprint(
                 summary="Mock Plan",
                 project_context=ProjectContextUpdate(active_project="smart_home"),
                 tasks=[
@@ -389,7 +390,7 @@ def mock_build_model_with_fallback(
                 is_goal_completed=False
             )
         else:
-            mock_model.invoke.return_value = ArchitectureBlueprint(
+            mock_model.ainvoke.return_value = ArchitectureBlueprint(
                 summary="Goal Completed",
                 project_context=ProjectContextUpdate(active_project="smart_home"),
                 tasks=[],
@@ -399,7 +400,7 @@ def mock_build_model_with_fallback(
         mock_model.with_structured_output.return_value = mock_model
     elif role == "code_critic":
         from src.agents.code_critic_worker import CriticReport
-        mock_model.invoke.return_value = CriticReport(
+        mock_model.ainvoke.return_value = CriticReport(
             valid=True,
             findings=[],
             criticism_summary="Mock code critic review passed."
@@ -407,7 +408,7 @@ def mock_build_model_with_fallback(
         mock_model.with_structured_output.return_value = mock_model
     elif role == "critic_worker":
         from src.agents.critic_worker import QualityReport
-        mock_model.invoke.return_value = QualityReport(
+        mock_model.ainvoke.return_value = QualityReport(
             valid=True,
             quality_score=100,
             feedback_summary="Mock critic review passed.",
@@ -415,7 +416,7 @@ def mock_build_model_with_fallback(
         )
         mock_model.with_structured_output.return_value = mock_model
     else:
-        mock_model.invoke.return_value = AIMessage(content="Mocked worker response.")
+        mock_model.ainvoke.return_value = AIMessage(content="Mocked worker response.")
         
     return mock_model
 
@@ -427,7 +428,7 @@ patcher_model.start()
 # Now import workflow safely
 from src.graph.workflow import build_multi_agent_graph, get_graph_config
 
-def main():
+async def main():
     print("==============================================================")
     print("INITIALIZING RIGOROUS MULTI-AGENT OFFLINE INTEGRATION TEST")
     print("==============================================================")
@@ -473,7 +474,7 @@ def main():
         return original_run_safe.invoke(args)
         
     mock_run_safe_tool = MagicMock()
-    mock_run_safe_tool.invoke.side_effect = mock_run_safe
+    mock_run_safe_tool.ainvoke.side_effect = mock_run_safe
     tools_map["run_safe_commands"] = mock_run_safe_tool
     
     with patch("src.agents.coding_worker.get_retrieval_service") as mock_get_service:
@@ -484,7 +485,7 @@ def main():
          mock_service.search_agent_memory.return_value = []
          mock_get_service.return_value = mock_service
          
-         result = graph.invoke(initial_state, config=config)
+         result = await graph.ainvoke(initial_state, config=config)
          
     print("\n==============================================================")
     print("RUN COMPLETED. RUNNING DETAILED ASSERTIONS...")
@@ -538,4 +539,5 @@ def main():
     print("\nALL OFFLINE RIGOROUS INTEGRATION ASSERTIONS PASSED SUCCESSFULLY!")
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

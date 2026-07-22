@@ -1,5 +1,6 @@
+import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from src.core.engine import RAGContextEngine
 
 class TestContextOverflow(unittest.TestCase):
@@ -8,7 +9,7 @@ class TestContextOverflow(unittest.TestCase):
         self.retriever = MagicMock()
         self.retriever.get_count.return_value = 10
         with patch('src.core.engine.LLMService') as mock_llm_service:
-            mock_llm = MagicMock()
+            mock_llm = AsyncMock()
             mock_llm_service.return_value = mock_llm
             self.engine = RAGContextEngine(self.retriever)
 if __name__ == '__main__':

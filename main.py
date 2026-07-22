@@ -715,7 +715,7 @@ async def approve_changes(request: ApprovalRequest):
         except Exception as e:
             logger.warning(f"Failed to register approval for {pending['filepath']}: {e}")
             
-        result = execute_pending_approval(session_id)
+        result = await execute_pending_approval(session_id)
         logger.info(f"Approval executed: {result}")
         
         if hasattr(rag.multi_agent_graph, "aupdate_state"):

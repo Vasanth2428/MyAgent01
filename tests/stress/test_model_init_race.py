@@ -1,3 +1,4 @@
+import asyncio
 """
 Model Initialization Race Test - Verify singleton embedding and reranking models initialize safely.
 """

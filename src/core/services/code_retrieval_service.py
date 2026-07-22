@@ -54,11 +54,12 @@ class CodeRetrievalService:
             self._push_chunks_to_weaviate()
 
     def sync_index(self) -> None:
-        """Forces a directory scan and persists the updated index on a background thread."""
-        import threading
-        def _sync():
+        """Forces a directory scan and persists the updated index on a background task."""
+        import asyncio
+        
+        def _sync_blocking():
             try:
-                logger.info("Synchronizing code index on background thread...")
+                logger.info("Synchronizing code index in background...")
                 self.indexer.index_repository()
                 self.registry.save_index()
                 self._push_chunks_to_weaviate()
@@ -66,8 +67,13 @@ class CodeRetrievalService:
             except Exception as e:
                 logger.error(f"Failed background index synchronization: {e}")
                 
-        sync_thread = threading.Thread(target=_sync, daemon=True)
-        sync_thread.start()
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _sync_blocking)
+        except RuntimeError:
+            # Fallback if no event loop is running
+            import threading
+            threading.Thread(target=_sync_blocking, daemon=True).start()
 
     def _push_chunks_to_weaviate(self) -> None:
         """Collects semantic chunks from parsed symbols and pushes them to Weaviate."""
@@ -160,11 +166,12 @@ class CodeRetrievalService:
 
         return combined_results
 
-    def audit_security(self, filepath: str) -> Dict[str, List[Dict[str, Any]]]:
+    async def audit_security(self, filepath: str) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Scans a file for potential security vulnerabilities.
+        Scans a file for potential security vulnerabilities asynchronously.
         Returns a dict with vulnerability categories and findings.
         """
+        import asyncio
         findings = {category: [] for category in SECURITY_PATTERNS}
         
         full_path = os.path.realpath(os.path.join(self.project_root, filepath))
@@ -172,10 +179,16 @@ class CodeRetrievalService:
             logger.warning(f"File not found for security audit: {filepath}")
             return {"error": [f"File '{filepath}' not found for audit"]}
 
-        try:
+        def _read_file():
             with open(full_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
-                lines = content.splitlines()
+                return content.splitlines()
+
+        try:
+            loop = asyncio.get_running_loop()
+            lines = await loop.run_in_executor(None, _read_file)
+        except RuntimeError:
+            lines = _read_file()
         except Exception as e:
             return {"error": [f"Failed to read file for audit: {e}"]}
 

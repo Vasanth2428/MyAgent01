@@ -1,4 +1,5 @@
-from unittest.mock import Mock, patch
+import asyncio
+from unittest.mock import Mock, patch, AsyncMock
 from langchain_core.messages import HumanMessage
 from src.agents.scraper_worker import scraper_worker_node
 from src.agents.critic_worker import critic_worker_node
@@ -21,14 +22,13 @@ def test_scraper_worker_node_success():
     mock_llm_response.content = "Competitor specs: 4GB RAM, 64GB storage, $199."
     
     with patch("src.agents.scraper_worker.get_reasoning_model") as mock_get_model:
-        mock_model = Mock()
-        mock_model.invoke.return_value = mock_llm_response
+        mock_model = AsyncMock()
+        mock_model.ainvoke.return_value = mock_llm_response
         mock_get_model.return_value = mock_model
         
-        result = scraper_worker_node(state, scraper_tool=mock_scraper)
+        result = asyncio.run(scraper_worker_node(state, scraper_tool=mock_scraper))
         
         # Must execute async code wrapped in sync/mock
-        import asyncio
         if asyncio.iscoroutine(result):
             result = asyncio.run(result)
             
@@ -48,8 +48,7 @@ def test_scraper_worker_node_no_url():
     }
     
     # Run the scraper node
-    import asyncio
-    result = scraper_worker_node(state)
+    result = asyncio.run(scraper_worker_node(state))
     if asyncio.iscoroutine(result):
         result = asyncio.run(result)
         
@@ -72,11 +71,11 @@ def test_critic_worker_node_success():
     mock_llm_response.content = "Comparison: Our specs (8GB) are double the competitor specs (4GB)."
     
     with patch("src.agents.critic_worker.get_reasoning_model") as mock_get_model:
-        mock_model = Mock()
-        mock_model.invoke.return_value = mock_llm_response
+        mock_model = AsyncMock()
+        mock_model.ainvoke.return_value = mock_llm_response
         mock_get_model.return_value = mock_model
         
-        result = critic_worker_node(state)
+        result = asyncio.run(critic_worker_node(state))
         
         assert "scratchpad" in result
         assert "- [RAG Worker]: Our specs are 8GB RAM." in result["scratchpad"]

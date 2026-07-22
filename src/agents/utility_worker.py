@@ -48,7 +48,7 @@ def _build_utility_response(response: str, scratchpad: str, result_type: str = "
     }
 
 
-def utility_worker_node(state: dict) -> dict:
+async def utility_worker_node(state: dict) -> dict:
     """
     Utility worker for calculations, datetime, and summarization.
     """
@@ -100,7 +100,7 @@ def utility_worker_node(state: dict) -> dict:
                     "Make sure to explain your steps and calculate the final answer clearly.\n\n"
                     f"Query: {target_query}"
                 )
-                response = model.invoke([
+                response = await model.ainvoke([
                     SystemMessage(content=UTILITY_SYSTEM_PROMPT),
                     HumanMessage(content=prompt)
                 ])

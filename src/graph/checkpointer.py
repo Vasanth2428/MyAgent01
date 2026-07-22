@@ -25,14 +25,28 @@ def setup_checkpointer():
     
     try:
         from langgraph.checkpoint.sqlite import SqliteSaver
+        import asyncio
+        
+        class AsyncCompatibleSqliteSaver(SqliteSaver):
+            async def aget_tuple(self, config):
+                return await asyncio.to_thread(self.get_tuple, config)
+            
+            async def asearch(self, *args, **kwargs):
+                return await asyncio.to_thread(self.search, *args, **kwargs)
+                
+            async def aput(self, *args, **kwargs):
+                return await asyncio.to_thread(self.put, *args, **kwargs)
+                
+            async def aput_writes(self, *args, **kwargs):
+                return await asyncio.to_thread(self.put_writes, *args, **kwargs)
         
         safe_dir = os.path.join(os.getcwd(), 'checkpoints')
         os.makedirs(safe_dir, exist_ok=True)
         full_path = os.path.join(safe_dir, db_path)
         
         conn = sqlite3.connect(full_path, check_same_thread=False)
-        saver = SqliteSaver(conn)
-        logger.info(f"Using LangGraph SqliteSaver with database: {full_path}")
+        saver = AsyncCompatibleSqliteSaver(conn)
+        logger.info(f"Using LangGraph AsyncCompatibleSqliteSaver with database: {full_path}")
         return saver
     except ImportError as e:
         logger.error(f"FATAL: SqliteSaver not available: {e}. Persistent memory cannot be initialized.")

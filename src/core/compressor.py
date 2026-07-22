@@ -113,6 +113,8 @@ class Compressor:
             emb_model = Compressor._get_embedding_model()
             if emb_model is not None:
                 query_emb = emb_model.encode([query])[0]
+                
+                # Native Rust/ONNX batching via FastEmbed
                 segment_embs = emb_model.encode(all_segments)
                 
                 for i, seg_emb in enumerate(segment_embs):

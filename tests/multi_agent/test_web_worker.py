@@ -1,3 +1,4 @@
+import asyncio
 # Tests for web worker.
 
 
@@ -16,7 +17,7 @@ def test_web_worker_routing():
     def mock_search(query):
         return [{"title": "Weather", "url": "https://example.com", "content": "Sunny, 72F"}]
     
-    result = web_worker_node(state, web_search_tool=mock_search)
+    result = asyncio.run(web_worker_node(state, web_search_tool=mock_search))
     
     assert "messages" in result
     assert result["next_agent"] == "supervisor"
@@ -37,6 +38,6 @@ def test_web_worker_no_results():
     def mock_search(query):
         return []
     
-    result = web_worker_node(state, web_search_tool=mock_search)
+    result = asyncio.run(web_worker_node(state, web_search_tool=mock_search))
     
     assert "couldn't find" in result["messages"][0].content

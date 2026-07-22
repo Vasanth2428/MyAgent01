@@ -1,7 +1,8 @@
+import asyncio
 import os
 import tempfile
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from src.core.code.parser import parse_code_file
 from src.core.code.symbol_table import SymbolTable
@@ -185,8 +186,8 @@ def test_critic_node(mock_service, mock_get_critic):
         findings=[],
         criticism_summary="All code looks correct and fully validated."
     )
-    mock_llm = MagicMock()
-    mock_llm.invoke.return_value = mock_report
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = mock_report
     mock_get_critic.return_value = mock_llm
     
     state = {
@@ -197,7 +198,7 @@ def test_critic_node(mock_service, mock_get_critic):
         }
     }
     
-    res = code_critic_worker_node(state)
+    res = asyncio.run(code_critic_worker_node(state))
     assert res["worker_complete"]["code_critic_worker"] is True
     assert "CODE CRITIC VALIDATION REPORT" in res["worker_outputs"]["code_critic_worker"]
     assert "valid_symbol" in res["scratchpad"] or "validated" in res["scratchpad"]
@@ -226,8 +227,8 @@ def test_critic_node_retry_required(mock_service, mock_get_critic):
         findings=[mock_finding],
         criticism_summary="Found critical symbol hallucination."
     )
-    mock_llm = MagicMock()
-    mock_llm.invoke.return_value = mock_report
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = mock_report
     mock_get_critic.return_value = mock_llm
     
     state = {
@@ -239,14 +240,14 @@ def test_critic_node_retry_required(mock_service, mock_get_critic):
         }
     }
     
-    res = code_critic_worker_node(state)
+    res = asyncio.run(code_critic_worker_node(state))
     assert res["worker_complete"]["code_critic_worker"] is True
     assert "RETRY_REQUIRED" in res["worker_outputs"]["code_critic_worker"]
-    # Check that the plan was updated with a fix instruction that includes the critic feedback
-    assert res["plan"][-1].startswith("FIX: ")
+    # Check that current_task was updated with a fix instruction that includes the critic feedback
+    assert res["current_task"].startswith("CRITIC RETRY")
     # The fix instruction should contain the symbol name and file location from the critic finding
-    assert "missing_func" in res["plan"][-1]
-    assert "main.py" in res["plan"][-1]
+    assert "missing_func" in res["current_task"]
+    assert "main.py" in res["current_task"]
 
 
 def test_security_audit():
@@ -268,12 +269,13 @@ def unsafe_cmd(cmd):
         
         # Mock retriever to avoid Weaviate connection
         from src.core.services.code_retrieval_service import CodeRetrievalService
-        from unittest.mock import MagicMock
+        from unittest.mock import MagicMock, AsyncMock
         
         mock_retriever = MagicMock()
         service = CodeRetrievalService(temp_dir, mock_retriever)
         
-        findings = service.audit_security("vulnerable.py")
+        import asyncio
+        findings = asyncio.run(service.audit_security("vulnerable.py"))
         
         assert "hardcoded_secret" in findings
         assert len(findings["hardcoded_secret"]) >= 1
@@ -300,7 +302,7 @@ def helper():
 ''')
         
         from src.core.services.code_retrieval_service import CodeRetrievalService
-        from unittest.mock import MagicMock
+        from unittest.mock import MagicMock, AsyncMock
         
         mock_retriever = MagicMock()
         service = CodeRetrievalService(temp_dir, mock_retriever)

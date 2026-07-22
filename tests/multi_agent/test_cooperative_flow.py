@@ -1,4 +1,5 @@
-from unittest.mock import Mock, patch
+import asyncio
+from unittest.mock import Mock, patch, AsyncMock
 from langchain_core.messages import HumanMessage, AIMessage
 from src.agents.rag_worker import rag_worker_node
 from src.agents.web_worker import web_worker_node
@@ -25,11 +26,11 @@ def test_cooperative_rag_worker_updates_scratchpad():
     mock_llm_response.content = "Company X revenue is $10M."
     
     with patch("src.agents.rag_worker.get_reasoning_model") as mock_get_model:
-        mock_model = Mock()
-        mock_model.invoke.return_value = mock_llm_response
+        mock_model = AsyncMock()
+        mock_model.ainvoke.return_value = mock_llm_response
         mock_get_model.return_value = mock_model
         
-        result = rag_worker_node(state, document_tool=mock_search)
+        result = asyncio.run(rag_worker_node(state, document_tool=mock_search))
         
         assert "scratchpad" in result
         assert "- [RAG Worker]: Company X revenue is $10M." in result["scratchpad"]
@@ -56,11 +57,11 @@ def test_cooperative_web_worker_updates_scratchpad():
     mock_llm_response.content = "Paris weather is sunny, 22C."
     
     with patch("src.agents.web_worker.get_reasoning_model") as mock_get_model:
-        mock_model = Mock()
-        mock_model.invoke.return_value = mock_llm_response
+        mock_model = AsyncMock()
+        mock_model.ainvoke.return_value = mock_llm_response
         mock_get_model.return_value = mock_model
         
-        result = web_worker_node(state, web_search_tool=mock_search)
+        result = asyncio.run(web_worker_node(state, web_search_tool=mock_search))
         
         assert "scratchpad" in result
         assert "- [RAG Worker]: Company X revenue is $10M." in result["scratchpad"]
@@ -78,7 +79,7 @@ def test_cooperative_utility_worker_updates_scratchpad():
         "steps_remaining": 10
     }
     
-    result = utility_worker_node(state)
+    result = asyncio.run(utility_worker_node(state))
     
     assert "scratchpad" in result
     assert "Result: 125" in result["messages"][0].content
@@ -100,11 +101,11 @@ def test_synthesizer_compiles_final_answer():
     mock_llm_response.content = "Company X's revenue is $10M and the weather in Paris is sunny, 22C."
     
     with patch("src.graph.synthesizer.get_reasoning_model") as mock_get_model:
-        mock_model = Mock()
-        mock_model.invoke.return_value = mock_llm_response
+        mock_model = AsyncMock()
+        mock_model.ainvoke.return_value = mock_llm_response
         mock_get_model.return_value = mock_model
         
-        result = synthesizer_node(state)
+        result = asyncio.run(synthesizer_node(state))
         
         assert result["final_answer"] == "Company X's revenue is $10M and the weather in Paris is sunny, 22C."
         assert result["next_agent"] == "FINISH"
@@ -126,11 +127,11 @@ def test_supervisor_routes_to_architect():
     )
     
     with patch("src.graph.supervisor.get_routing_model") as mock_get_model:
-        mock_model = Mock()
-        mock_model.invoke.return_value = mock_llm_response
+        mock_model = AsyncMock()
+        mock_model.ainvoke.return_value = mock_llm_response
         mock_get_model.return_value = mock_model
         
-        result = supervisor_node(state)
+        result = asyncio.run(supervisor_node(state))
         
         assert result["next_agent"] == "architect_worker"
         assert result["current_task"] == "Create the initial architecture blueprint and task plan."

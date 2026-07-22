@@ -31,7 +31,7 @@ def get_reasoning_model():
     )
 
 
-def web_worker_node(state: dict, web_search_tool: callable = None) -> dict:
+async def web_worker_node(state: dict, web_search_tool: callable = None) -> dict:
     """
     Web search worker that fetches live information.
     
@@ -92,7 +92,7 @@ def web_worker_node(state: dict, web_search_tool: callable = None) -> dict:
         sources = ", ".join([r.get('url', '') for r in results if r.get('url')])
         
         model = get_reasoning_model()
-        response = model.invoke([
+        response = await model.ainvoke([
             SystemMessage(content=WEB_SYSTEM_PROMPT),
             HumanMessage(content=f"Search results:\n{context}\n\nQuestion: {target_query}\n\nSources: {sources}")
         ])

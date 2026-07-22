@@ -37,7 +37,7 @@ def get_reasoning_model():
     )
 
 
-def critic_worker_node(state: dict) -> dict:
+async def critic_worker_node(state: dict) -> dict:
     """
     Critic worker that evaluates factuality and consistency of accumulated findings.
     """
@@ -74,7 +74,7 @@ Analyze and output:
     
     model = get_reasoning_model()
     try:
-        response = model.invoke([
+        response = await model.ainvoke([
             SystemMessage(content=CRITIC_SYSTEM_PROMPT),
             HumanMessage(content=critique_prompt)
         ])

@@ -1,10 +1,11 @@
+import asyncio
 """
 RAG Evaluation Test Suite
 Tests retrieval, reranking, HyDE, compression, and grounding verification.
 """
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from src.core.evaluator import RAGEvaluator, GroundingVerifier
 from src.core.benchmarks import RAG_BENCHMARKS
 from src.core.compressor import Compressor
@@ -45,7 +46,7 @@ class TestRetrievalEvaluation(unittest.TestCase):
 
     def setUp(self):
         self.mock_retriever = MagicMock()
-        self.mock_llm = MagicMock()
+        self.mock_llm = AsyncMock()
         self.evaluator = RAGEvaluator(self.mock_retriever, self.mock_llm)
 
     def test_retrieval_metrics_structure(self):
@@ -82,7 +83,7 @@ class TestHyDEEvaluation(unittest.TestCase):
 
     def setUp(self):
         self.mock_retriever = MagicMock()
-        self.mock_llm = MagicMock()
+        self.mock_llm = AsyncMock()
         self.evaluator = RAGEvaluator(self.mock_retriever, self.mock_llm)
 
     def test_hyde_metrics_structure(self):
@@ -119,7 +120,7 @@ class TestRerankingEvaluation(unittest.TestCase):
 
     def setUp(self):
         self.mock_retriever = MagicMock()
-        self.mock_llm = MagicMock()
+        self.mock_llm = AsyncMock()
         self.evaluator = RAGEvaluator(self.mock_retriever, self.mock_llm)
 
     def test_reranking_identifies_correct_ranking(self):

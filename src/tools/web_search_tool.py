@@ -10,7 +10,9 @@ def get_tavily_api_key() -> Optional[str]:
     """Get Tavily API key from environment."""
     return os.getenv("TAVILY_API_KEY")
 
+import functools
 
+@functools.lru_cache(maxsize=128)
 def web_search(query: str, max_results: int = 5) -> List[Dict]:
     """Perform web search using Tavily API."""
     api_key = get_tavily_api_key()

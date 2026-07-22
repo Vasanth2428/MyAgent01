@@ -64,7 +64,7 @@ def _latest_user_request(messages: list) -> str:
     return ""
 
 
-def architect_worker_node(state: dict) -> dict:
+async def architect_worker_node(state: dict) -> dict:
     """Build or revise a plan while preserving completed tasks as immutable history."""
     existing_plan = list(state.get("plan") or [])
     completed = [task for task in existing_plan if isinstance(task, dict) and task.get("status") in {"done", "validated"}]
@@ -86,7 +86,7 @@ def architect_worker_node(state: dict) -> dict:
         ]
         for attempt in range(3):
             try:
-                blueprint: ArchitectureBlueprint = get_architect_model().invoke(messages_prompt)
+                blueprint: ArchitectureBlueprint = await get_architect_model().ainvoke(messages_prompt)
                 break
             except Exception as e:
                 if attempt == 2:

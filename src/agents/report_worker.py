@@ -55,7 +55,7 @@ def get_report_model():
         api_key_envs=keys,
     )
 
-def report_worker_node(state: dict) -> dict:
+async def report_worker_node(state: dict) -> dict:
     """
     Report worker that generates a comprehensive markdown report and saves it locally.
     """
@@ -77,7 +77,7 @@ Please write the comprehensive report based on the above information.
 """
     
     try:
-        response = model.invoke([
+        response = await model.ainvoke([
             SystemMessage(content=REPORT_SYSTEM_PROMPT),
             HumanMessage(content=prompt)
         ])

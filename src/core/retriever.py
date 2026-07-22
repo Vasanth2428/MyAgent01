@@ -180,6 +180,7 @@ class WeaviateRetriever:
                         self.client.collections.create(
                             name="RAGKnowledge",
                             vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
                             properties=[
                                 wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
@@ -233,6 +234,7 @@ class WeaviateRetriever:
                         self.client.collections.create(
                             name="AgentMemory",
                             vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
                             properties=[
                                 wvc.config.Property(name="action_summary", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="outcome", data_type=wvc.config.DataType.TEXT),
@@ -249,6 +251,7 @@ class WeaviateRetriever:
                                 model="sentence-transformers/all-MiniLM-L6-v2",
                                 vectorize_collection_name=False,
                             ),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
                             properties=[
                                 wvc.config.Property(name="action_summary", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="outcome", data_type=wvc.config.DataType.TEXT),
@@ -265,6 +268,7 @@ class WeaviateRetriever:
                         self.client.collections.create(
                             name="RAGDocs",
                             vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
                             properties=[
                                 wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="library_name", data_type=wvc.config.DataType.TEXT),
@@ -279,6 +283,7 @@ class WeaviateRetriever:
                                 model="sentence-transformers/all-MiniLM-L6-v2",
                                 vectorize_collection_name=False,
                             ),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
                             properties=[
                                 wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="library_name", data_type=wvc.config.DataType.TEXT),
@@ -376,6 +381,8 @@ class WeaviateRetriever:
         t_embed_start = time.time()
         from src.core.services.grounding_service import _get_shared_embedding_model
         embedding_model = _get_shared_embedding_model()
+        
+        # Native Rust/ONNX batching via FastEmbed
         doc_vectors = embedding_model.encode(docs).tolist()
         t_embed = time.time()
 
@@ -631,6 +638,8 @@ class WeaviateRetriever:
         from src.core.services.grounding_service import _get_shared_embedding_model
         embedding_model = _get_shared_embedding_model()
         chunk_texts = [chunk["text"] for chunk in chunks]
+        
+        # Native Rust/ONNX batching via FastEmbed
         chunk_vectors = embedding_model.encode(chunk_texts).tolist()
 
         # Save to local persistent storage

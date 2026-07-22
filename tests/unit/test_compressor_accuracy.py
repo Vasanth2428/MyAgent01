@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from src.core.compressor import Compressor
 from src.core.engine import count_tokens

@@ -56,7 +56,7 @@ def safe_truncate_text(text: str, max_chars: int = 4000) -> str:
     return slice_area
 
 
-def scraper_worker_node(state: dict, scraper_tool: callable = None) -> dict:
+async def scraper_worker_node(state: dict, scraper_tool: callable = None) -> dict:
     """
     Scraper worker that fetches text content from target URLs.
     """
@@ -143,7 +143,7 @@ def scraper_worker_node(state: dict, scraper_tool: callable = None) -> dict:
             f"Scraped content:\n{prompt_content}"
         )
         
-        response = model.invoke([
+        response = await model.ainvoke([
             SystemMessage(content=SCRAPER_SYSTEM_PROMPT),
             HumanMessage(content=summary_prompt)
         ])

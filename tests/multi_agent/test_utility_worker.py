@@ -1,3 +1,4 @@
+import asyncio
 # Tests for the utility worker.
 from langchain_core.messages import HumanMessage
 from src.agents.utility_worker import utility_worker_node
@@ -12,7 +13,7 @@ def test_utility_worker_math_simple():
         "steps_remaining": 10,
         "final_answer": ""
     }
-    result = utility_worker_node(state)
+    result = asyncio.run(utility_worker_node(state))
     assert "messages" in result
     assert result["next_agent"] == "supervisor"
     assert "Result: 4" in result["messages"][0].content
@@ -27,7 +28,7 @@ def test_utility_worker_math_verbal():
         "steps_remaining": 10,
         "final_answer": ""
     }
-    result = utility_worker_node(state)
+    result = asyncio.run(utility_worker_node(state))
     assert "messages" in result
     assert result["next_agent"] == "supervisor"
     # 5 + 6 * 2 = 17 (due to standard operator precedence)
@@ -43,7 +44,7 @@ def test_utility_worker_datetime():
         "steps_remaining": 10,
         "final_answer": ""
     }
-    result = utility_worker_node(state)
+    result = asyncio.run(utility_worker_node(state))
     assert "messages" in result
     assert result["next_agent"] == "supervisor"
     assert "Current datetime:" in result["messages"][0].content
@@ -58,7 +59,7 @@ def test_utility_worker_summarize():
         "steps_remaining": 10,
         "final_answer": ""
     }
-    result = utility_worker_node(state)
+    result = asyncio.run(utility_worker_node(state))
     assert "messages" in result
     assert result["next_agent"] == "supervisor"
     assert "provide the text you'd like me to summarize" in result["messages"][0].content.lower()
@@ -73,7 +74,7 @@ def test_utility_worker_fallback():
         "steps_remaining": 10,
         "final_answer": ""
     }
-    result = utility_worker_node(state)
+    result = asyncio.run(utility_worker_node(state))
     assert "messages" in result
     assert result["next_agent"] == "supervisor"
     assert "I can only perform calculations" in result["messages"][0].content
@@ -88,6 +89,6 @@ def test_utility_worker_empty_query():
         "steps_remaining": 10,
         "final_answer": ""
     }
-    result = utility_worker_node(state)
+    result = asyncio.run(utility_worker_node(state))
     assert result["next_agent"] == "supervisor"
     assert "No query provided" in result["messages"][0].content

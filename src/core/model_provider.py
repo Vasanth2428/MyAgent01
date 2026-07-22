@@ -8,8 +8,10 @@ changed globally or for one worker through environment variables.
 from __future__ import annotations
 
 import os
+import time
+import asyncio
 from typing import Any, Iterable, Optional, Sequence
-
+import threading
 
 import contextvars
 
@@ -17,13 +19,37 @@ import contextvars
 active_model_provider = contextvars.ContextVar("active_model_provider", default=None)
 active_model_name = contextvars.ContextVar("active_model_name", default=None)
 
+# Lock for thread-safe model instantiation
+_model_init_lock = threading.Lock()
+
+_llm_cache_initialized = False
+_llm_cache_lock = threading.Lock()
+
+def init_llm_cache():
+    global _llm_cache_initialized
+    with _llm_cache_lock:
+        if not _llm_cache_initialized:
+            try:
+                import os
+                from langchain_core.globals import set_llm_cache
+                from langchain_community.cache import SQLiteCache
+                os.makedirs("data", exist_ok=True)
+                set_llm_cache(SQLiteCache(database_path="data/llm_cache.db"))
+            except Exception as e:
+                import logging
+                logging.getLogger("RAG.ModelProvider").warning(f"Failed to initialize LLM cache: {e}")
+            finally:
+                _llm_cache_initialized = True
+
+init_llm_cache()
+
 
 _PROVIDER_DEFAULT_MODELS = {
     "groq": "llama-3.1-8b-instant",
     "google_genai": "gemini-2.5-flash",
     "openai": "gpt-4o-mini",
     "cerebras": "gpt-oss-120b",
-    "openrouter": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "openrouter": "google/lyria-3-pro-preview",
     "mistral": "codestral-latest",
 }
 
@@ -139,6 +165,31 @@ def _clean_messages(messages, provider):
     return cleaned
 
 
+_global_mistral_lock = threading.Lock()
+_global_mistral_last_request_time = 0.0
+
+def _wait_for_mistral_rate_limit():
+    global _global_mistral_last_request_time
+    with _global_mistral_lock:
+        now = time.time()
+        elapsed = now - _global_mistral_last_request_time
+        if elapsed < 1.1:
+            time.sleep(1.1 - elapsed)
+        _global_mistral_last_request_time = time.time()
+
+async def _await_for_mistral_rate_limit():
+    global _global_mistral_last_request_time
+    while True:
+        with _global_mistral_lock:
+            now = time.time()
+            elapsed = now - _global_mistral_last_request_time
+            if elapsed >= 1.1:
+                _global_mistral_last_request_time = time.time()
+                break
+            wait_time = 1.1 - elapsed
+        await asyncio.sleep(wait_time)
+
+
 def _wrap_model_message_cleaning(model, provider):
     # If the model is a mock (unit tests), return it directly to preserve test assertions
     if hasattr(model, "assert_called_once") or hasattr(model, "_mock_return_value") or hasattr(model, "_mock_wraps"):
@@ -155,6 +206,8 @@ def _wrap_model_message_cleaning(model, provider):
     if orig_invoke and not hasattr(orig_invoke, "_is_wrapped"):
         @retry(retries=3, backoff=2.0, jitter=0.5, is_transient_fn=_is_rate_limit, logger_name="RAG.ModelProvider")
         def clean_invoke(input_val, *args, **kwargs):
+            if provider == "mistral":
+                _wait_for_mistral_rate_limit()
             if isinstance(input_val, list):
                 input_val = _clean_messages(input_val, provider)
             return orig_invoke(input_val, *args, **kwargs)
@@ -165,6 +218,8 @@ def _wrap_model_message_cleaning(model, provider):
     if orig_ainvoke and not hasattr(orig_ainvoke, "_is_wrapped"):
         @retry(retries=3, backoff=2.0, jitter=0.5, is_transient_fn=_is_rate_limit, logger_name="RAG.ModelProvider")
         async def clean_ainvoke(input_val, *args, **kwargs):
+            if provider == "mistral":
+                await _await_for_mistral_rate_limit()
             if isinstance(input_val, list):
                 input_val = _clean_messages(input_val, provider)
             return await orig_ainvoke(input_val, *args, **kwargs)
@@ -190,6 +245,13 @@ def _create_base_model(
     }
     if max_tokens is not None:
         common["max_tokens"] = max_tokens
+
+    # GLOBAL DRY-RUN OVERRIDE: Prevent token waste during infrastructure testing
+    if os.getenv("MOCK_LLM", "false").lower() == "true" or provider == "mock":
+        from src.core.llm import FakeChatGroq
+        logger = logging.getLogger("RAG.ModelProvider")
+        logger.warning(f"MOCK_LLM is enabled. Returning FakeChatGroq instead of {provider} to save tokens.")
+        return FakeChatGroq(**common)
 
     if provider == "groq":
         from langchain_groq import ChatGroq
@@ -252,14 +314,17 @@ def build_chat_model(
     """Build one configured model while preserving LangChain capabilities."""
     provider = resolve_provider(role, variant)
     model_name = resolve_model(role, default_model, variant)
-    model = _create_base_model(
-        provider=provider,
-        model=model_name,
-        temperature=temperature,
-        api_key_envs=api_key_envs,
-        max_tokens=max_tokens,
-        **kwargs,
-    )
+    
+    with _model_init_lock:
+        model = _create_base_model(
+            provider=provider,
+            model=model_name,
+            temperature=temperature,
+            api_key_envs=api_key_envs,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+        
     if tools:
         model = model.bind_tools(tools)
     if structured_output is not None:

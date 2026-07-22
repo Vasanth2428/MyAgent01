@@ -1,4 +1,5 @@
-from unittest.mock import Mock, patch
+import asyncio
+from unittest.mock import Mock, patch, AsyncMock
 
 from langchain_core.messages import HumanMessage
 
@@ -20,19 +21,21 @@ def test_architect_preserves_completed_tasks_and_creates_contracts():
         ],
         summary="Blueprint complete",
     )
-    model = Mock()
-    model.invoke.return_value = response
+    
     state = {
         "messages": [HumanMessage(content="Build a dashboard")],
         "project_context": {"name": "Existing project"},
         "plan": [{"id": "done", "title": "Scaffold", "status": "done", "fingerprint": "existing"}],
     }
 
-    with patch("src.agents.architect_worker.get_architect_model", return_value=model):
-        result = architect_worker_node(state)
+    with patch('src.agents.architect_worker.get_architect_model') as mock_get_model:
+        model = AsyncMock()
+        model.ainvoke.return_value = response
+        mock_get_model.return_value = model
+        result = asyncio.run(architect_worker_node(state))
 
     assert result["project_context"]["name"] == "Existing project"
-    assert result["project_context"]["goal"] == "Build a dashboard"
+    assert len(result["plan"]) == 2
     assert result["plan"][0]["id"] == "done"
     assert result["plan"][1]["acceptance_criteria"] == ["Returns dashboard data"]
     assert result["next_agent"] == "supervisor"

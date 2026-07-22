@@ -45,8 +45,8 @@ def initialize_graph():
     return multi_agent_graph
 
 
-def run_query(query: str, thread_id: str = "default"):
-    """Run a single query through the multi-agent system."""
+async def run_query(query: str, thread_id: str = "default"):
+    """Run a single query through the multi-agent system asynchronously."""
     global multi_agent_graph
     
     # Sanitize inputs
@@ -72,7 +72,6 @@ def run_query(query: str, thread_id: str = "default"):
         "approval_filepath": "",
         "pending_file_approvals": {},
         "patch_is_verified": False,
-        "active_project": "",
         "session_id": "default_session",
         "bypass_hitl": bypass_hitl,
         # Pipeline 1: Retrieval context cache references
@@ -93,7 +92,7 @@ def run_query(query: str, thread_id: str = "default"):
     
     token = session_id_var.set(thread_id)
     try:
-        result = multi_agent_graph.invoke(initial_state, config=config)
+        result = await multi_agent_graph.ainvoke(initial_state, config=config)
         return result
     finally:
         session_id_var.reset(token)
@@ -101,7 +100,8 @@ def run_query(query: str, thread_id: str = "default"):
 
 if __name__ == "__main__":
     import sys
+    import asyncio
     query = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "What is 2+2?"
-    result = run_query(query)
+    result = asyncio.run(run_query(query))
     answer = result.get('final_answer', '') or (result.get('messages', [{}])[-1].content if result.get('messages') else 'No answer')
     print(f"Answer: {answer}")

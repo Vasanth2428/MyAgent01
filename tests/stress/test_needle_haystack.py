@@ -1,3 +1,4 @@
+import asyncio
 """
 Needle In Massive Haystack - Stress retrieval and compression beyond current scale.
 

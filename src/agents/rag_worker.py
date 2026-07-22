@@ -35,7 +35,7 @@ def get_reasoning_model():
     )
 
 
-def rag_worker_node(state: dict, document_tool: callable = None) -> dict:
+async def rag_worker_node(state: dict, document_tool: callable = None) -> dict:
     """
     RAG worker that searches documents and answers based solely on document content.
     
@@ -100,7 +100,7 @@ def rag_worker_node(state: dict, document_tool: callable = None) -> dict:
         context = "\n\n".join([f"Document {i+1}:\n{validate_tool_output(r.get('text', ''))}" for i, r in enumerate(results)])
         
         model = get_reasoning_model()
-        response = model.invoke([
+        response = await model.ainvoke([
             SystemMessage(content=RAG_SYSTEM_PROMPT),
             HumanMessage(content=f"Documents:\n{context}\n\nQuestion: {target_query}")
         ])

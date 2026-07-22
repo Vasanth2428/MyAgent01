@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import Mock, patch
 
 from langchain_core.messages import AIMessage
@@ -72,7 +73,7 @@ def test_code_critic_reads_specialist_output_not_only_legacy_worker_key():
 
     report = Mock(valid=True, criticism_summary="Looks good", findings=[])
     model = Mock()
-    model.invoke.return_value = report
+    model.ainvoke.return_value = report
     state = {
         "current_task": "Create page",
         "worker_outputs": {"frontend_worker": "### VERIFICATION RESULTS\nnpm run test passed"},
@@ -86,7 +87,7 @@ def test_code_critic_reads_specialist_output_not_only_legacy_worker_key():
     with patch("src.agents.code_critic_worker.get_critic_model", return_value=model), patch(
         "src.agents.coding_worker.get_retrieval_service", side_effect=RuntimeError("not needed")
     ):
-        result = code_critic_worker_node(state)
+        result = asyncio.run(code_critic_worker_node(state))
 
     assert result["critic_feedback"]["status"] == "validated"
     assert result["critic_feedback"]["target_worker"] == "frontend_worker"

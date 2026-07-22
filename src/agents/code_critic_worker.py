@@ -75,7 +75,7 @@ def _get_ci_monitor_model():
         structured_output=CIDecision,
     )
 
-def _monitor_ci_task(task_id: str, script_name: str) -> str:
+async def _monitor_ci_task(task_id: str, script_name: str) -> str:
     import json, time
     from src.tools.coding_tools import check_task_status, kill_task, send_task_input
     
@@ -97,7 +97,7 @@ def _monitor_ci_task(task_id: str, script_name: str) -> str:
                 HumanMessage(content=f"Command: {script_name}\n\nRecent Output:\n{stdout_so_far[-2000:]}")
             ]
             
-            decision: CIDecision = model.invoke(prompt)
+            decision: CIDecision = await model.ainvoke(prompt)
             logger.info(f"[CI MONITOR] Action: {decision.action} | Reason: {decision.reasoning}")
             
             if decision.action == "ABORT":
@@ -115,7 +115,7 @@ def _monitor_ci_task(task_id: str, script_name: str) -> str:
 
 
 
-def code_critic_worker_node(state: dict) -> dict:
+async def code_critic_worker_node(state: dict) -> dict:
     """
     Code critic worker that audits coding worker outputs against repository symbol tables.
     """
@@ -190,8 +190,7 @@ def code_critic_worker_node(state: dict) -> dict:
     from src.tools.coding_tools import execute_command
     
     auto_ci_artifacts = []
-    _active_project = state.get("active_project")
-    workspace_dir = os.path.abspath(f"./workspace/{_active_project}" if _active_project else "./workspace")
+    workspace_dir = os.path.abspath("./workspace")
     
     explicit_commands = task_contract.get("verification_commands", [])
     if explicit_commands:
@@ -202,7 +201,7 @@ def code_critic_worker_node(state: dict) -> dict:
                 res_json = json.loads(ci_result)
                 if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
                     task_id = res_json["data"]["task_id"]
-                    ci_result = _monitor_ci_task(task_id, cmd)
+                    ci_result = await _monitor_ci_task(task_id, cmd)
             except Exception as e:
                 logger.warning(f"Failed to check task_id in CI result: {e}")
             auto_ci_artifacts.append(f"--- AUTO CI RUN: {cmd} ---\n{ci_result}")
@@ -223,7 +222,7 @@ def code_critic_worker_node(state: dict) -> dict:
                             res_json = json.loads(ci_result)
                             if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
                                 task_id = res_json["data"]["task_id"]
-                                ci_result = _monitor_ci_task(task_id, cmd)
+                                ci_result = await _monitor_ci_task(task_id, cmd)
                         except Exception:
                             pass
                         auto_ci_artifacts.append(f"--- AUTO CI RUN (Fallback): {cmd} ---\n{ci_result}")
@@ -238,7 +237,7 @@ def code_critic_worker_node(state: dict) -> dict:
             res_json = json.loads(ci_result)
             if isinstance(res_json, dict) and res_json.get("status") == "ok" and "data" in res_json and "task_id" in res_json["data"]:
                 task_id = res_json["data"]["task_id"]
-                ci_result = _monitor_ci_task(task_id, "pytest")
+                ci_result = await _monitor_ci_task(task_id, "pytest")
         except Exception:
             pass
         auto_ci_artifacts.append(f"--- AUTO CI RUN (Fallback): pytest ---\n{ci_result}")
@@ -280,7 +279,7 @@ def code_critic_worker_node(state: dict) -> dict:
     
     is_invalid = False
     try:
-        report: CriticReport = model.invoke(critic_prompt)
+        report: CriticReport = await model.ainvoke(critic_prompt)
         
         # Format findings for presentation
         output_lines = []
@@ -336,7 +335,6 @@ def code_critic_worker_node(state: dict) -> dict:
         "worker_outputs": {"code_critic_worker": final_text},
         "worker_type": "code_critic_worker",
         "next_agent": "supervisor",
-        "active_project": state.get("active_project"),
         "created_files": state.get("created_files", []),
         "plan": plan,
         "critic_feedback": {

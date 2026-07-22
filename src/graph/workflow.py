@@ -61,6 +61,27 @@ def route_based_on_next_agent(state: dict) -> Union[str, List[Send]]:
         return "architect_worker_node"
     elif next_agent == "synthesizer":
         return "synthesizer_node"
+    elif next_agent == "parallel":
+        sends = []
+        node_map = {
+            "frontend_worker": "frontend_worker_node",
+            "backend_worker": "backend_worker_node",
+            "rag_worker": "rag_worker_node",
+            "web_worker": "web_worker_node",
+            "utility_worker": "utility_worker_node",
+            "scraper_worker": "scraper_worker_node",
+            "critic_worker": "critic_worker_node",
+            "report_worker": "report_worker_node",
+            "code_critic_worker": "code_critic_worker_node",
+            "architect_worker": "architect_worker_node",
+            "synthesizer": "synthesizer_node"
+        }
+        for task in state.get("parallel_tasks", []):
+            agent = task.get("agent")
+            task_id = task.get("task_id")
+            if agent in node_map:
+                sends.append(Send(node_map[agent], {"current_task_id": task_id, "worker_type": agent}))
+        return sends if sends else END
     return END
 
 

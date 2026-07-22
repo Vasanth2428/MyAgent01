@@ -1,3 +1,4 @@
+import asyncio
 import os
 import pytest
 from src.tools.coding_tools import (

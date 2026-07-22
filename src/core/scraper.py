@@ -134,6 +134,9 @@ class HTMLTextExtractor(HTMLParser):
         return content.strip()
 
 
+import functools
+
+@functools.lru_cache(maxsize=64)
 def scrape_web_page(url: str, max_chars: int = 6000) -> str:
     """
     Fetches the HTML content of the URL, extracts clean body text, and truncates appropriately.

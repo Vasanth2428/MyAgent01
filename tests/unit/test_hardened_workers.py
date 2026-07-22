@@ -1,5 +1,6 @@
+import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from langchain_core.messages import HumanMessage
 
 from src.agents.scraper_worker import safe_truncate_text
@@ -32,23 +33,24 @@ class TestHardenedWorkers(unittest.TestCase):
             findings=[CriticFinding(issue_type="security_risk", details="Path traversal vulnerability", severity="critical")],
             criticism_summary="Security validation failed."
         )
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_report
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value = mock_report
         mock_get_critic.return_value = mock_llm
 
         # Set up a state that has already hit the retry count of 2
         state = {
             "scratchpad": "Some findings",
             "current_task": "Write secure files",
+            "current_task_id": "task_123",
             "worker_outputs": {"coding_worker": "def exploit(): pass"},
             "critic_retry_count": 2,
-            "plan": ["Original task"]
+            "plan": [{"id": "task_123", "attempt_count": 2}]
         }
 
-        res = code_critic_worker_node(state)
+        res = asyncio.run(code_critic_worker_node(state))
         # It should not append a retry task to the plan, nor append RETRY_REQUIRED
         self.assertEqual(res["critic_retry_count"], 0)
-        self.assertNotIn("plan", res)
+        self.assertIn("plan", res)
         self.assertNotIn("RETRY_REQUIRED", res["messages"][0].content)
         self.assertIn("Max validation retry limit reached", res["messages"][0].content)
 
@@ -56,22 +58,23 @@ class TestHardenedWorkers(unittest.TestCase):
         state_first = {
             "scratchpad": "Some findings",
             "current_task": "Write secure files",
+            "current_task_id": "task_123",
             "worker_outputs": {"coding_worker": "def exploit(): pass"},
             "critic_retry_count": 0,
-            "plan": ["Original task"]
+            "plan": [{"id": "task_123", "attempt_count": 0}]
         }
-        res_first = code_critic_worker_node(state_first)
+        res_first = asyncio.run(code_critic_worker_node(state_first))
         self.assertEqual(res_first["critic_retry_count"], 1)
-        self.assertTrue(any("FIX:" in p for p in res_first["plan"]))
+        self.assertTrue("CRITIC RETRY" in res_first["current_task"])
         self.assertIn("RETRY_REQUIRED", res_first["messages"][0].content)
 
     @patch("src.agents.critic_worker.get_reasoning_model")
     def test_critic_retry_limit(self, mock_get_critic):
         """Critic specialist should abort retry loops when limit is reached."""
-        mock_llm = MagicMock()
+        mock_llm = AsyncMock()
         mock_response = MagicMock()
         mock_response.content = "Contradiction detected! RETRY_REQUIRED"
-        mock_llm.invoke.return_value = mock_response
+        mock_llm.ainvoke.return_value = mock_response
         mock_get_critic.return_value = mock_llm
     
         state = {
@@ -82,7 +85,7 @@ class TestHardenedWorkers(unittest.TestCase):
             "plan": ["Original plan"]
         }
     
-        res = critic_worker_node(state)
+        res = asyncio.run(critic_worker_node(state))
         # It should strip RETRY_REQUIRED and not append error task, but should suggest an alternative approach
         self.assertEqual(res["critic_retry_count"], 0)
         self.assertIn("plan", res)
@@ -97,7 +100,7 @@ class TestHardenedWorkers(unittest.TestCase):
             "scratchpad": "",
             "messages": []
         }
-        res = utility_worker_node(state)
+        res = asyncio.run(utility_worker_node(state))
         self.assertIn("route code/repository analysis tasks to the coding specialist", res["messages"][0].content)
         self.assertEqual(res["worker_complete"]["utility_worker"], True)
 
@@ -108,7 +111,7 @@ class TestHardenedWorkers(unittest.TestCase):
             "scratchpad": "Line 1 of logs.\nLine 2 of findings.\nLine 3 of results.",
             "messages": []
         }
-        res = utility_worker_node(state)
+        res = asyncio.run(utility_worker_node(state))
         # Should not return the static "please provide text" message, but actually summarize/truncate it
         self.assertNotIn("please provide the text you'd like me to summarize", res["messages"][0].content.lower())
         self.assertIn("findings", res["messages"][0].content)
@@ -117,18 +120,20 @@ class TestHardenedWorkers(unittest.TestCase):
     @patch("src.agents.coding_worker.get_coding_model")
     def test_coding_worker_interrupted_timeout(self, mock_get_model, mock_is_compatible):
         """Coding worker should return completed=False and report interruption on loop timeout."""
-        mock_tool_call = {
-            "name": "list_files",
-            "args": {"directory": "."},
-            "id": "call_123"
-        }
+        # Generate unique tool calls to avoid the 3-step infinite loop guardrail
+        mock_responses = []
+        for i in range(55):
+            mock_response = MagicMock()
+            mock_response.tool_calls = [{
+                "name": "list_files",
+                "args": {"directory": f"./dir_{i}"},
+                "id": f"call_{i}"
+            }]
+            mock_response.content = f"Need to check files {i}..."
+            mock_responses.append(mock_response)
         
-        mock_response_with_tools = MagicMock()
-        mock_response_with_tools.tool_calls = [mock_tool_call]
-        mock_response_with_tools.content = "Need to check files again..."
-        
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_response_with_tools
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.side_effect = mock_responses
         mock_get_model.return_value = mock_llm
         
         state = {
@@ -137,8 +142,8 @@ class TestHardenedWorkers(unittest.TestCase):
             "messages": []
         }
         
-        with patch.dict(tools_map, {"list_files": MagicMock(invoke=MagicMock(return_value="file1.txt"))}):
-            res = coding_worker_node(state)
+        with patch.dict(tools_map, {"list_files": MagicMock(ainvoke=AsyncMock(return_value="file1.txt"))}):
+            res = asyncio.run(coding_worker_node(state))
             self.assertEqual(res["worker_complete"]["coding_worker"], False)
             self.assertIn("Interrupted - execution limit reached", res["scratchpad"])
             self.assertIn("Interrupted: reached execution limit", res["messages"][0].content)

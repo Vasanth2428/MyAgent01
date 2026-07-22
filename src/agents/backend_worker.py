@@ -14,6 +14,6 @@ Hard rules:
 - If blocked by HITL, queue the change and continue tool-calling behavior as instructed; do not claim you lack access.
 """
 
-def backend_worker_node(state: dict) -> dict:
+async def backend_worker_node(state: dict) -> dict:
     state["coding_worker_override_prompt"] = BACKEND_SYSTEM_PROMPT
-    return coding_worker_node(state)
+    return await coding_worker_node(state)

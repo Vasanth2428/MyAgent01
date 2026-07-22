@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 import os
 import numpy as np
 if not os.environ.get('GROQ_API_KEY'):

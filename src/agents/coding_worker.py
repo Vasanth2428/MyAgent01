@@ -85,6 +85,7 @@ Hard rules:
 - ENVIRONMENT: You are operating on a Windows machine using PowerShell. When using run_safe_commands, you MUST use valid PowerShell commands (e.g. `Get-Content`, `Select-String`, `Test-Path`, `Invoke-WebRequest`). Avoid Linux commands like `cat`, `grep`, `ls`, or `curl`.
 - STRICT EDITING ENFORCEMENT: ALWAYS use `multi_replace_file_content` for code modifications. You MUST NEVER overwrite an entire file just because a precise edit failed. CRITICAL: You MUST ALWAYS execute `read_files` on a target file to obtain the exact line numbers and spacing *before* you attempt to modify it. Never guess line numbers or assume file contents, especially for auto-generated scaffolding files like package.json. If an edit fails, read the file again and retry. Overwriting is strictly forbidden.
 - PREVENT HALLUCINATIONS: If you need to use a newer framework or library and are unsure of the exact syntax, you MUST use `search_docs(query, library_name)` first. If no docs exist, use `ingest_documentation(url, library_name)` to learn the official syntax. Never guess fake methods.
+- ARCHITECTURAL DISCIPLINE: Never hand-write or guess the contents of complex structural files like package.json, vite.config.js, or tsconfig.json from scratch. ALWAYS prioritize using standard CLI scaffolding tools (e.g., npx, npm init) to generate them. Validate your target file paths carefully to avoid writing to parent directories by mistake.
 - If blocked by HITL, queue the change and continue tool-calling behavior as instructed; do not claim you lack access.
 """
 
@@ -496,16 +497,11 @@ def dry_run_and_validate_patch(filepath: str, patch_diff: str, test_command: Opt
 
 
 @tool
-
-def audit_file_security(filepath: str) -> str:
-
+async def audit_file_security(filepath: str) -> str:
     """Scans a specific file for potential security vulnerabilities including hardcoded secrets, injection risks, and path traversal."""
-
     try:
-
         service = get_retrieval_service()
-
-        findings = service.audit_security(filepath)
+        findings = await service.audit_security(filepath)
 
         if "error" in findings:
 
@@ -991,7 +987,7 @@ def extract_clean_json(content: str) -> str:
 
 
 
-def is_task_compatible(task: str) -> tuple[bool, str]:
+async def is_task_compatible(task: str) -> tuple[bool, str]:
 
     """
 
@@ -1015,7 +1011,7 @@ def is_task_compatible(task: str) -> tuple[bool, str]:
 
         model = get_validation_model()
 
-        response = model.invoke([
+        response = await model.ainvoke([
 
             SystemMessage(content=VALIDATION_SYSTEM_PROMPT),
 
@@ -1215,17 +1211,36 @@ def parse_malformed_tool_calls(content: str) -> List[dict]:
 
 
 
-def coding_worker_node(state: dict) -> dict:
+def _intelligently_compress_observation(observation: str, target_instruction: str, tool_name: str, tool_args: dict) -> str:
+    if not isinstance(observation, str):
+        observation = str(observation)
+    if len(observation) <= 8000:
+        return observation
+        
+    print(f"[CODING WORKER] Observation from {tool_name} too large ({len(observation)} chars). Running semantic compression...")
+    from src.core.compressor import Compressor
+    
+    # Pre-slice extremely massive outputs to avoid embedding memory crashes
+    if len(observation) > 100000:
+        observation = observation[:50000] + "\n...[OMITTED MASSIVE MIDDLE]...\n" + observation[-50000:]
+        
+    query_context = f"Find the results, relevant text, and errors for the tool {tool_name} executing task: {target_instruction}"
+    try:
+        compressed = Compressor.compress([observation], query=query_context, max_tokens=1500)
+        return f"[INTELLIGENTLY COMPRESSED TOOL OUTPUT]\n{compressed}"
+    except Exception as e:
+        logger.warning(f"Failed to compress observation: {e}")
+        # Fallback to hard slice
+        return observation[:4000] + "\n... [TRUNCATED DUE TO LENGTH] ...\n" + observation[-4000:]
+
+
+async def coding_worker_node(state: dict) -> dict:
 
     """
 
     Coding worker node that executes an internal loop of tool calls to solve a task.
 
     """
-
-    from src.tools.coding_tools import set_active_project
-
-    set_active_project(state.get("active_project", ""))
 
     
 
@@ -1312,11 +1327,18 @@ def coding_worker_node(state: dict) -> dict:
 
 
     # Task compatibility pre-check
+
     if target_instruction.startswith("CRITIC RETRY"):
+
         is_compatible = True
+
         incompatibility_explanation = None
+
     else:
-        is_compatible, incompatibility_explanation = is_task_compatible(target_instruction)
+
+        is_compatible, incompatibility_explanation = await is_task_compatible(target_instruction)
+
+
 
     if not is_compatible:
 
@@ -1427,6 +1449,8 @@ def coding_worker_node(state: dict) -> dict:
                 )
 
                 agent_messages.append(execution_message)
+                if "Success:" in t_res:
+                    state["code_modified"] = True
 
         else:
 
@@ -1463,6 +1487,8 @@ def coding_worker_node(state: dict) -> dict:
                 )
 
                 agent_messages.append(execution_message)
+                if "Success:" in resume_result:
+                    state["code_modified"] = True
 
     else:
 
@@ -1514,11 +1540,25 @@ def coding_worker_node(state: dict) -> dict:
 
 
 
+        from src.core.compressor import Compressor
+        
+        # Phase 2: Agent Context Partitioning (Scratchpad Bloat Prevention)
+        # Instead of dumping raw unbounded references, compress them based on current task
+        raw_references = "\n".join(state.get("scratchpad_references") or [])
+        compressed_refs = ""
+        if raw_references.strip():
+            print(f"[CODING WORKER] Compressing {len(raw_references)} chars of global context references...")
+            compressed_refs = Compressor.compress([raw_references], target_instruction, max_tokens=1000)
+            
+        combined_findings = scratchpad
+        if compressed_refs:
+            combined_findings += f"\n\n[GLOBAL TASK CONTEXT]\n{compressed_refs}"
+
         agent_messages = [
 
             SystemMessage(content=system_prompt),
 
-            HumanMessage(content=f"Task: {target_instruction}\n\nBlackboard Findings: {scratchpad}")
+            HumanMessage(content=f"Task: {target_instruction}\n\nBlackboard Findings: {combined_findings}")
 
         ]
 
@@ -1562,9 +1602,8 @@ def coding_worker_node(state: dict) -> dict:
 
     
 
-    max_steps = 50
-
-    max_tool_calls = 100
+    max_steps = 15  # Reduced from 50 to prevent massive token waste on failed tasks
+    max_tool_calls = 30  # Reduced from 100
 
     broken_out = False
 
@@ -1585,7 +1624,7 @@ def coding_worker_node(state: dict) -> dict:
         
         # Phase 2: Rolling Context Compression (Working Memory)
         # Prevents context window explosion during long autonomous runs
-        MAX_CONTEXT_MESSAGES = 40
+        MAX_CONTEXT_MESSAGES = 20  # Reduced from 40 to aggressively cap token usage
         if len(agent_messages) > MAX_CONTEXT_MESSAGES:
             print(f"[CODING WORKER] Context window exceeded {MAX_CONTEXT_MESSAGES}. Compressing...")
             # Keep system prompt + original task
@@ -1602,7 +1641,7 @@ def coding_worker_node(state: dict) -> dict:
         
         # Inject Phase Prompts dynamically
         try:
-            response = model.invoke(agent_messages)
+            response = await model.ainvoke(agent_messages)
 
         except Exception as e:
 
@@ -1804,7 +1843,7 @@ def coding_worker_node(state: dict) -> dict:
 
                     try:
 
-                        observation = tool_func.invoke(tool_args)
+                        observation = await tool_func.ainvoke(tool_args)
 
                         if "Success:" in observation:
 
@@ -1820,6 +1859,8 @@ def coding_worker_node(state: dict) -> dict:
 
                     except Exception as e:
                         observation = f"Error executing tool '{tool_name}': {e}"
+
+                    observation = _intelligently_compress_observation(observation, target_instruction, tool_name, tool_args)
 
                     print(f"  Observation (first 100 chars): {observation[:100]}")
                     tool_message = ToolMessage(content=observation, tool_call_id=tool_id, name=tool_name)
@@ -1839,7 +1880,7 @@ def coding_worker_node(state: dict) -> dict:
 
                 try:
 
-                    observation = tool_func.invoke(tool_args)
+                    observation = await tool_func.ainvoke(tool_args)
 
                     # Track successful patch verification in state
 
@@ -1848,8 +1889,9 @@ def coding_worker_node(state: dict) -> dict:
                         state["patch_is_verified"] = True
 
                 except Exception as e:
-
                     observation = f"Error executing tool '{tool_name}': {e}"
+
+                observation = _intelligently_compress_observation(observation, target_instruction, tool_name, tool_args)
 
                 print(f"  Observation (first 100 chars): {observation[:100]}")
 
@@ -1910,11 +1952,11 @@ def coding_worker_node(state: dict) -> dict:
     
 
     if completed:
-
+        final_explanation = _intelligently_compress_observation(final_explanation, target_instruction, "final_explanation", {})
         updated_scratchpad = scratchpad + f"\n- [Coding Worker]: {final_explanation}"
 
     else:
-
+        final_explanation = _intelligently_compress_observation(final_explanation, target_instruction, "final_explanation", {})
         updated_scratchpad = scratchpad + f"\n- [Coding Worker]: Interrupted - execution limit reached: {final_explanation}"
 
 
@@ -2097,12 +2139,11 @@ def clear_pending_approval(session_id: str) -> None:
             })
 
         _session_resume_results[session_id] = results
-
         del _pending_approvals[session_id]
 
 
 
-def execute_pending_approval(session_id: str) -> str:
+async def execute_pending_approval(session_id: str) -> str:
 
     """Execute all pending approvals for a session."""
 
@@ -2158,7 +2199,7 @@ def execute_pending_approval(session_id: str) -> str:
 
         try:
 
-            result = tool_func.invoke(tool_args)
+            result = await tool_func.ainvoke(tool_args)
 
             results.append({
 

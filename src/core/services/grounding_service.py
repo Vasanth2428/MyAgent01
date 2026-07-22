@@ -84,12 +84,14 @@ def _get_shared_embedding_model():
                     
                     class FastEmbedAdapter:
                         def __init__(self, model_name: str):
-                            self.model = TextEmbedding(model_name=model_name)
+                            # Default to None threads to utilize all available CPU cores via ONNX/Rust
+                            self.model = TextEmbedding(model_name=model_name, threads=None)
                         def encode(self, texts) -> np.ndarray:
                             if isinstance(texts, str):
                                 return next(self.model.embed([texts]))
                             else:
-                                return np.array(list(self.model.embed(texts)))
+                                # Delegate batching directly to the Rust backend (batch_size=256)
+                                return np.array(list(self.model.embed(texts, batch_size=256)))
                                 
                     _embedding_model_instance = FastEmbedAdapter("sentence-transformers/all-MiniLM-L6-v2")
                     logger.info("Successfully loaded FastEmbed ONNX model.")

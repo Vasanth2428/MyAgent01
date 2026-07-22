@@ -34,18 +34,6 @@ ALLOWED_COMMANDS = [
     "git diff"
 ]
 
-
-import contextvars
-active_project_var = contextvars.ContextVar('active_project', default=None)
-
-def set_active_project(project_name: str) -> None:
-    """Sets the active project subdirectory name to programmatically restrict file writes."""
-    active_project_var.set(project_name)
-    
-def get_active_project() -> str:
-    return active_project_var.get()
-
-
 def sanitize_file_content_for_llm(content: str) -> str:
     """Sanitize read file content to prevent prompt injections."""
     dangerous_phrases = [
@@ -69,21 +57,7 @@ def _is_safe_path(filepath: str) -> bool:
     if any(norm_path.startswith(p) for p in forbidden_prefixes) or "../" in norm_path:
         return False
         
-    _active_project = active_project_var.get()
-    if _active_project:
-        clean_path = norm_path
-        while clean_path.startswith("./"):
-            clean_path = clean_path[2:]
-        if clean_path.startswith("workspace/"):
-            clean_path = clean_path[len("workspace/"):]
-        while clean_path.startswith("./"):
-            clean_path = clean_path[2:]
-            
-        allowed_root_configs = {"vite.config.js", "package.json", ".", ""}
-        if clean_path not in allowed_root_configs:
-            if not (clean_path == _active_project or clean_path.startswith(_active_project + "/") or clean_path.startswith(_active_project + "_")):
-                return False
-        
+
     real_workspace = os.path.realpath(WORKSPACE_ROOT)
     abs_path = os.path.realpath(os.path.join(WORKSPACE_ROOT, filepath))
     
@@ -554,9 +528,7 @@ def execute_command(command: str, wait_ms_before_async: int = 2000) -> str:
     cmd_clean = command.strip()
     if not cmd_clean:
         return _build_error_response("Empty command provided.")
-        
-    _active_project = active_project_var.get()
-    exec_cwd = os.path.join(WORKSPACE_ROOT, _active_project) if _active_project else WORKSPACE_ROOT
+    exec_cwd = WORKSPACE_ROOT
     print(f"\n[EXEC] Executing command: {cmd_clean} in '{exec_cwd}' (WaitMsBeforeAsync={wait_ms_before_async})")
     
     task_id = str(uuid.uuid4())[:8]

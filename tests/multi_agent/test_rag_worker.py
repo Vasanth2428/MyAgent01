@@ -1,3 +1,4 @@
+import asyncio
 # Tests for RAG worker.
 
 
@@ -16,7 +17,7 @@ def test_rag_worker_no_documents():
     def mock_search(query):
         return []
     
-    result = rag_worker_node(state, document_tool=mock_search)
+    result = asyncio.run(rag_worker_node(state, document_tool=mock_search))
     
     assert "I don't know" in result["messages"][0].content
 
@@ -38,7 +39,7 @@ def test_rag_worker_with_documents():
     def mock_search(query):
         return mock_docs
     
-    result = rag_worker_node(state, document_tool=mock_search)
+    result = asyncio.run(rag_worker_node(state, document_tool=mock_search))
     
     assert "messages" in result
     assert result["next_agent"] == "supervisor"

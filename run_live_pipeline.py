@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from src.graph.workflow import build_multi_agent_graph, get_graph_config
 
-def main():
+async def main():
     print("Initializing Live Multi-Agent Workflow...")
     # Initialize graph checkpointer
     from src.graph.checkpointer import setup_checkpointer
@@ -24,12 +24,18 @@ def main():
     
     # Detailed prompt for a rigorous end-to-end fullstack test
     default_query = """
-Build a truly functional, production-ready Fullstack AI Dashboard Platform.
-You must strictly build this inside `./workspace/ai_dashboard`.
+Build a truly functional, production-ready Fullstack AI Dashboard Platform following the "fullstack-architect" persona.
+You must strictly build this inside the `./workspace/ai_dashboard` directory.
+
+CRITICAL ENGINEERING PRACTICES:
+- Do NOT hand-write massive configuration files (like package.json, vite.config.js, or tsconfig) line-by-line.
+- ALWAYS prioritize using proper CLI scaffolding tools (e.g., `npm create vite@latest`, `npx create-react-app`, `npm install`) via the `run_safe_commands` tool.
+- Verify your Current Working Directory BEFORE writing files to prevent hallucinating paths and breaking parent directories. 
+- The frontend code must reside strictly inside `./workspace/ai_dashboard/frontend` and backend inside `./workspace/ai_dashboard/backend`.
 
 Requirements:
-1. Frontend: React + Vite + TailwindCSS. Create a stunning, highly responsive UI with glassmorphism, animated charts, and dark mode.
-2. Backend: Node.js + Express API (or FastAPI if you prefer Python).
+1. Frontend: React + Vite + TailwindCSS. Use component-driven architecture. Create a premium UI with a custom HSL design-system theme (dark/light modes, glassmorphism, smooth gradients, Inter/Roboto fonts, micro-animations).
+2. Backend: Node.js + Express API.
 3. Data: Implement a robust mock database (JSON/memory) tracking realtime metrics for 5 AI models.
 4. Core Features:
    - A dynamic dashboard layout with a sidebar and top navigation.
@@ -46,14 +52,13 @@ Execute this end-to-end. Do not stop until the application is fully functional, 
     initial_state = create_initial_state([HumanMessage(content=query)], bypass_hitl=True)
     initial_state.update({
         "steps_remaining": 15,
-        "active_project": "my-react-app",
         "session_id": f"live_build_{int(time.time())}"
     })
     
     print("\nRunning Live Multi-Agent pipeline (calling real LLMs)...")
     import traceback
     try:
-        result = graph.invoke(initial_state, config=config)
+        result = await graph.ainvoke(initial_state, config=config)
         print("\nPipeline run completed successfully.")
         print("\nFinal Answer from Synthesizer:")
         print(result.get("final_answer", "(No final answer found)"))
@@ -62,4 +67,5 @@ Execute this end-to-end. Do not stop until the application is fully functional, 
         traceback.print_exc()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

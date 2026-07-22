@@ -101,12 +101,15 @@ class PlanTaskInput(BaseModel):
 
 class ProjectContextUpdate(BaseModel):
     active_project: Optional[str] = Field(None, description="The name of the current active project, or None if global.")
+class ParallelRoute(BaseModel):
+    agent: str = Field(description="The worker to execute this task (e.g. 'frontend_worker' or 'backend_worker').")
+    task_id: str = Field(description="The ID of the task to execute.")
+
 class SupervisorRouting(BaseModel):
-    next_agent: str = Field(description="The worker to execute the next action (or 'parallel').")
-    current_task: Optional[Any] = Field(description="The instruction to pass to the next agent. Will be stringified.")
-    current_task_id: Optional[str] = Field(None, description="The ID of the task being executed.")
-    parallel_tasks: List[str] = Field(default_factory=list, description="IDs of tasks to execute if routing to 'parallel'.")
-    active_project: Optional[str] = Field(description="Optional: Active project directory (e.g. 'frontend' or 'backend').", default=None)
+    next_agent: str = Field(description="The worker to execute the next action (or 'parallel' if dispatching multiple tasks).")
+    current_task: Optional[Any] = Field(description="The instruction to pass if routing to a single agent.")
+    current_task_id: Optional[str] = Field(None, description="The ID of the task being executed if routing to a single agent.")
+    parallel_tasks: List[ParallelRoute] = Field(default_factory=list, description="List of tasks to execute concurrently if next_agent is 'parallel'.")
 
 
 def get_routing_model():
@@ -331,7 +334,7 @@ def apply_post_worker_state_updates(state: dict, plan: List[PlanTask], messages:
     return plan, last_validated_task_id, task_history, task_events
 
 
-def supervisor_node(state: dict) -> dict:
+async def supervisor_node(state: dict) -> dict:
     messages = state.get("messages", [])
     steps = state.get("steps_remaining", 30)
     retry_counter = int(state.get("retry_counter") or 0)
@@ -391,7 +394,6 @@ def supervisor_node(state: dict) -> dict:
     next_agent = "synthesizer"
     current_task = ""
     parallel_tasks: List[str] = []
-    active_project_override = None
     legacy_plan_output: Optional[List[str]] = None
     current_task_id = state.get("current_task_id")
     
@@ -451,7 +453,7 @@ def supervisor_node(state: dict) -> dict:
             model = get_routing_model()
             for attempt in range(3):
                 try:
-                    response = model.invoke(routing_prompt)
+                    response = await model.ainvoke(routing_prompt)
                     break
                 except Exception as e:
                     if attempt == 2:
@@ -460,15 +462,33 @@ def supervisor_node(state: dict) -> dict:
                     routing_prompt.append(HumanMessage(content=f"Failed to parse structured output. Error: {e}\nPlease correct your JSON and try again."))
 
             next_agent = response.next_agent
-            parallel_tasks = response.parallel_tasks or []
-            active_project_override = getattr(response, "active_project", None) or None
-            if active_project_override == "":
-                active_project_override = None
-
-            selected_task = get_task_by_id(plan, response.current_task_id)
-
-            if selected_task is None and next_agent != "synthesizer":
-                selected_task = get_next_pending_task(plan)
+            parallel_tasks = getattr(response, "parallel_tasks", []) or []
+            
+            # Handle parallel routing branch
+            if next_agent == "parallel":
+                processed_parallel_tasks = []
+                for p_route in parallel_tasks:
+                    task = get_task_by_id(plan, p_route.task_id)
+                    if task and task.status in {"pending", "in_progress"}:
+                        task.status = "in_progress"
+                        task.assigned_agent = p_route.agent
+                        task.attempt_count += 1
+                        task_events.append({"event": "task_started", "task": task.id})
+                        processed_parallel_tasks.append({"agent": p_route.agent, "task_id": task.id})
+                
+                if processed_parallel_tasks:
+                    parallel_tasks = processed_parallel_tasks
+                    selected_task = None
+                    current_task_id = None
+                    current_task = "Executing tasks in parallel."
+                else:
+                    next_agent = "synthesizer"
+            
+            if next_agent != "parallel":
+                selected_task = get_task_by_id(plan, response.current_task_id)
+    
+                if selected_task is None and next_agent != "synthesizer":
+                    selected_task = get_next_pending_task(plan)
 
             if selected_task and selected_task.domain == "integration" and next_agent in {"frontend_worker", "backend_worker"}:
                 next_agent = "backend_worker"
@@ -538,7 +558,7 @@ def supervisor_node(state: dict) -> dict:
     valid_agents = [
         "rag_worker", "web_worker", "utility_worker", "scraper_worker",
         "critic_worker", "report_worker", "frontend_worker", "backend_worker", "code_critic_worker",
-        "architect_worker", "synthesizer", "FINISH",
+        "architect_worker", "synthesizer", "parallel", "FINISH",
     ]
     if next_agent not in valid_agents or next_agent == "FINISH":
         next_agent = "synthesizer"
@@ -549,8 +569,7 @@ def supervisor_node(state: dict) -> dict:
         "current_task": current_task,
         "current_task_id": current_task_id if next_agent != "synthesizer" else None,
         "last_validated_task_id": last_validated_task_id,
-        "parallel_tasks": parallel_tasks if next_agent in {"frontend_worker", "backend_worker"} else [],
-        "active_project": active_project_override if active_project_override is not None else (state.get("active_project") or None),
+        "parallel_tasks": parallel_tasks if next_agent == "parallel" else [],
         "steps_remaining": new_steps,
         "retry_counter": retry_counter,
         "task_history": task_history,

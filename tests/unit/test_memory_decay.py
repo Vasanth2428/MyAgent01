@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from src.core.memory import ConversationMemory
 from src.core.config import MEMORY_TOKEN_BUDGET
