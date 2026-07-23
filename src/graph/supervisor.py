@@ -381,11 +381,17 @@ async def supervisor_node(state: dict) -> dict:
             )
         )
 
+    import copy
     for msg in messages_to_route:
-        if isinstance(msg, AIMessage) and msg.name and msg.name != "supervisor":
-            routing_prompt.append(HumanMessage(content=f"[{msg.name.upper()}]:\n{msg.content}"))
+        msg_copy = copy.copy(msg)
+        content_str = str(msg_copy.content)
+        if len(content_str) > 5000:
+            msg_copy.content = content_str[:2500] + "\n...[TRUNCATED FOR SUPERVISOR CONTEXT LIMITS]...\n" + content_str[-2500:]
+            
+        if isinstance(msg_copy, AIMessage) and msg_copy.name and msg_copy.name != "supervisor":
+            routing_prompt.append(HumanMessage(content=f"[{msg_copy.name.upper()}]:\n{msg_copy.content}"))
         else:
-            routing_prompt.append(msg)
+            routing_prompt.append(msg_copy)
 
     if messages_to_route and not isinstance(routing_prompt[-1], HumanMessage):
         routing_prompt.append(HumanMessage(content="Please review the recent outputs and determine the next step."))

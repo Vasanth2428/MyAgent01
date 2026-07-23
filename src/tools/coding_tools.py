@@ -201,6 +201,8 @@ def create_files(filepath: str, content: str) -> str:
         
     dir_name = os.path.dirname(abs_path)
     if not os.path.isdir(dir_name):
+        if os.path.isfile(dir_name):
+            return f"Error: Cannot create parent directory '{os.path.basename(dir_name)}' because a file with that name already exists. If you accidentally created it as a file, delete it first using delete_file."
         try:
             os.makedirs(dir_name, exist_ok=True)
         except Exception as e:
@@ -220,15 +222,6 @@ def create_files(filepath: str, content: str) -> str:
         return f"Error creating file '{filepath}': {e}"
 
 
-def try_fuzzy_replace(content: str, target: str, replacement: str) -> Optional[str]:
-    """Attempts to replace the target block of code in the content using normalized matches."""
-    target_norm = target.replace("\r\n", "\n").rstrip()
-    content_norm = content.replace("\r\n", "\n")
-    
-    if target_norm in content_norm:
-        if content_norm.count(target_norm) == 1:
-            parts = content_norm.split(target_norm, 1)
-            return parts[0] + replacement + parts[1]
 
     target_lines = [line.strip() for line in target.replace("\r\n", "\n").split("\n")]
     if not target_lines or (len(target_lines) == 1 and not target_lines[0]):
@@ -255,45 +248,6 @@ def try_fuzzy_replace(content: str, target: str, replacement: str) -> Optional[s
     return None
 
 
-def edit_code_file(filepath: str, target: str, replacement: str) -> str:
-    """Search and replace a specific block of text in a file inside `./workspace`. Creates file if missing."""
-    from src.tools.rollback import backup_file
-    
-    if not _is_safe_path(filepath):
-        return f"Error: Access denied. Filepath '{filepath}' violates safety or path policies."
-        
-    if not _has_allowed_extension(filepath):
-        return f"Error: Access denied. File extension not allowed. Approved extensions: {', '.join(ALLOWED_EXTENSIONS)}"
-        
-    abs_path = _get_absolute_path(filepath)
-    
-    if not os.path.isfile(abs_path):
-        dir_name = os.path.dirname(abs_path)
-        if not os.path.isdir(dir_name):
-            try:
-                os.makedirs(dir_name, exist_ok=True)
-            except Exception as e:
-                return f"Error creating parent directory: {e}"
-        try:
-            with open(abs_path, "w", encoding="utf-8") as f:
-                f.write(replacement)
-            return f"Success: Created new file '{filepath}'."
-        except Exception as e:
-            return f"Error creating file '{filepath}': {e}"
-    
-    if not target:
-        backup_file(filepath)
-        from src.core.code.validation import validate_syntax
-        if filepath.lower().endswith((".py", ".js", ".jsx", ".ts", ".tsx")):
-            ok, msg = validate_syntax(replacement, filepath)
-            if not ok:
-                return f"Error: Validation failed on overwritten file. {msg}"
-        try:
-            with open(abs_path, "w", encoding="utf-8") as f:
-                f.write(replacement)
-            return f"Success: Overwrote '{filepath}' completely."
-        except Exception as e:
-            return f"Error overwriting file '{filepath}': {e}"
 
     try:
         with open(abs_path, "r", encoding="utf-8") as f:
@@ -398,28 +352,6 @@ def _multi_replace_file_content(filepath: str, chunks: list) -> str:
         return f"Error in multi_replace: {e}"
 
 
-def modify_files(filepath: str, target_code: str, replacement_code: str) -> str:
-    """Search and replace a specific block of text in a file inside `./workspace`. Fails if file does not exist."""
-    from src.tools.rollback import backup_file
-    
-    if not _is_safe_path(filepath):
-        return f"Error: Access denied. Filepath '{filepath}' violates safety or path policies."
-        
-    if not _has_allowed_extension(filepath):
-        return f"Error: Access denied. File extension not allowed. Approved extensions: {', '.join(ALLOWED_EXTENSIONS)}"
-        
-    abs_path = _get_absolute_path(filepath)
-    if not os.path.isfile(abs_path):
-        return f"Error: File '{filepath}' does not exist. Use create_files to create it first."
-        
-    if not target_code:
-        backup_file(filepath)
-        try:
-            with open(abs_path, "w", encoding="utf-8") as f:
-                f.write(replacement_code)
-            return f"Success: Overwrote '{filepath}' completely."
-        except Exception as e:
-            return f"Error overwriting file '{filepath}': {e}"
 
     try:
         with open(abs_path, "r", encoding="utf-8") as f:
@@ -523,12 +455,49 @@ def _build_response(status: str, message: str, data: dict = None) -> str:
 def _build_error_response(message: str, data: dict = None) -> str:
     return _build_response("error", message, data)
 
-def execute_command(command: str, wait_ms_before_async: int = 2000) -> str:
+def _clean_terminal_output(raw_text: str) -> str:
+    if not raw_text:
+        return ""
+    import re
+    # 1. Strip ANSI escape codes
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    text = ansi_escape.sub('', raw_text)
+    
+    # 2. Process carriage returns to simulate terminal overwrite
+    lines = text.split('\n')
+    cleaned = []
+    for line in lines:
+        if '\r' in line:
+            segments = line.split('\r')
+            line = segments[-1] if segments[-1] else (segments[-2] if len(segments) > 1 else "")
+            
+        line_stripped = line.strip()
+        # 3. Filter known progress spam
+        if not line_stripped:
+            continue
+        if "npm WARN" in line_stripped:
+            continue
+        if line_stripped.startswith("[") and line_stripped.endswith("]") and len(line_stripped) > 5 and ("#" in line_stripped or "=" in line_stripped):
+            continue
+                
+        cleaned.append(line)
+    
+    return '\n'.join(cleaned)
+
+def execute_command(command: str, directory: str = ".", wait_ms_before_async: int = 2000) -> str:
     """Execute a shell command securely and return a JSON response. Automatically yields to background if it takes longer than WaitMs."""
     cmd_clean = command.strip()
     if not cmd_clean:
         return _build_error_response("Empty command provided.")
-    exec_cwd = WORKSPACE_ROOT
+    
+    # Resolve the directory safely relative to WORKSPACE_ROOT
+    if directory == ".":
+        exec_cwd = WORKSPACE_ROOT
+    else:
+        abs_dir = _get_absolute_path(directory)
+        if not _is_safe_path(directory) or not os.path.exists(abs_dir):
+            return _build_error_response(f"Directory '{directory}' does not exist or violates safety policies.")
+        exec_cwd = abs_dir
     print(f"\n[EXEC] Executing command: {cmd_clean} in '{exec_cwd}' (WaitMsBeforeAsync={wait_ms_before_async})")
     
     task_id = str(uuid.uuid4())[:8]
@@ -536,9 +505,15 @@ def execute_command(command: str, wait_ms_before_async: int = 2000) -> str:
         kwargs = {}
         if os.name == 'nt':
             kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            # Use PowerShell explicitly on Windows instead of cmd.exe
+            cmd_args = ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd_clean]
+            use_shell = False
+        else:
+            cmd_args = cmd_clean
+            use_shell = True
             
         proc = subprocess.Popen(
-            cmd_clean, shell=True, cwd=exec_cwd,
+            cmd_args, shell=use_shell, cwd=exec_cwd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE, text=True,
             **kwargs
@@ -564,7 +539,10 @@ def execute_command(command: str, wait_ms_before_async: int = 2000) -> str:
             
             # Allow thread to finish reading
             time.sleep(0.1) 
-            stdout = "".join(_task_outputs[task_id])
+            raw_stdout = "".join(_task_outputs[task_id])
+            stdout = _clean_terminal_output(raw_stdout)
+            if len(stdout) > 5000:
+                stdout = stdout[:2500] + "\n...[TRUNCATED FOR LLM CONTEXT LIMITS]...\n" + stdout[-2500:]
             
             # Clean up task
             _active_tasks.pop(task_id, None)
@@ -587,9 +565,9 @@ def execute_command(command: str, wait_ms_before_async: int = 2000) -> str:
     except Exception as e:
         return _build_error_response(str(e))
 
-def run_safe_commands(command: str, wait_ms_before_async: int = 2000) -> str:
+def run_safe_commands(command: str, directory: str = ".", wait_ms_before_async: int = 2000) -> str:
     """Execute a shell command. Automatically pushes to background if it takes longer than WaitMsBeforeAsync."""
-    return execute_command(command, wait_ms_before_async)
+    return execute_command(command, directory, wait_ms_before_async)
 
 def check_task_status(task_id: str) -> str:
     """Check the status and recent output of a background task."""
@@ -597,6 +575,9 @@ def check_task_status(task_id: str) -> str:
         return _build_error_response(f"Invalid task ID: {task_id}")
     proc = _active_tasks[task_id]
     output = "".join(_task_outputs[task_id][-50:])
+    output = _clean_terminal_output(output)
+    if len(output) > 5000:
+        output = output[:2500] + "\n...[TRUNCATED FOR LLM CONTEXT LIMITS]...\n" + output[-2500:]
     status = "running" if proc.poll() is None else f"exited with code {proc.returncode}"
     return _build_response("ok", f"Task {status}", {"output": output})
 
@@ -638,128 +619,8 @@ def kill_task(task_id: str) -> str:
 
 
 
-def update_vite_config_root(project_name: str) -> None:
-    """Programmatically updates the root option in workspace/vite.config.js."""
-    config_path = os.path.join(WORKSPACE_ROOT, "vite.config.js")
-    
-    # Default config template if not exists
-    default_config = (
-        "import { defineConfig } from 'vite'\n"
-        "import react from '@vitejs/plugin-react'\n\n"
-        "// https://vitejs.dev/config/\n"
-        "export default defineConfig({\n"
-        "  plugins: [react()],\n"
-        f"  root: './{project_name}'\n"
-        "})\n"
-    )
-    
-    if not os.path.exists(config_path):
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(default_config)
-        return
-        
-    with open(config_path, "r", encoding="utf-8") as f:
-        content = f.read()
-        
-    # Check if root is already defined
-    if "root:" in content:
-        # Replace the root line
-        new_content = re.sub(
-            r"root:\s*['\"].*?['\"]",
-            f"root: './{project_name}'",
-            content
-        )
-    else:
-        # Insert root after defineConfig({
-        match = re.search(r"defineConfig\s*\(\s*\{", content)
-        if match:
-            idx = match.end()
-            new_content = content[:idx] + f"\n  root: './{project_name}'," + content[idx:]
-        else:
-            new_content = default_config
-            
-    with open(config_path, "w", encoding="utf-8") as f:
-        f.write(new_content)
 
 
-def scaffold_react_app(project_name: str) -> str:
-    """
-    Scaffolds a new React+Vite application inside `./workspace/[project_name]/`.
-    Creates standard directories and files, and updates parent vite.config.js.
-    """
-    # Clean project_name
-    project_name = "".join(c for c in project_name if c.isalnum() or c in "-_/")
-    if not project_name:
-        return "Error: Invalid project name."
-    
-    # Split nested paths like beezlebub/frontend into parent + leaf
-    parts = [p for p in project_name.replace("\\", "/").split("/") if p]
-    if not parts:
-        return "Error: Invalid project name."
-    leaf_name = parts[-1]
-    parent_path = "/".join(parts[:-1])
-    
-    project_dir = os.path.join(WORKSPACE_ROOT, project_name)
-    src_dir = os.path.join(project_dir, "src")
-    
-    try:
-        # 1. Create directory structure
-        os.makedirs(src_dir, exist_ok=True)
-        if parent_path:
-            os.makedirs(os.path.join(WORKSPACE_ROOT, parent_path), exist_ok=True)
-        
-        # 2. Write package.json if it doesn't exist in workspace
-        pkg_path = os.path.join(WORKSPACE_ROOT, "package.json")
-        if not os.path.exists(pkg_path):
-            package_json_content = """{
-  "name": "workspace-apps",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.3.4"
-  }
-}"""
-            with open(pkg_path, "w", encoding="utf-8") as f:
-                f.write(package_json_content)
-                
-        # 2b. Write local package.json, package-lock.json, and vite.config.js inside project directory
-        local_pkg_path = os.path.join(project_dir, "package.json")
-        default_pkg_content = """{
-  "name": "project_name_placeholder",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.3.4"
-  }
-}""".replace("project_name_placeholder", leaf_name)
 
         parent_pkg_path = os.path.join(WORKSPACE_ROOT, "package.json")
         if os.path.exists(parent_pkg_path):
