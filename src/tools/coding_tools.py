@@ -387,6 +387,24 @@ def _multi_replace_file_content(filepath: str, chunks: list) -> str:
         return f"Success: Modified '{filepath}' successfully."
     except Exception as e:
         return f"Error editing file '{filepath}': {e}"
+def create_directory(directory_path: str) -> str:
+    """Create a new directory (and any missing parent directories) inside the workspace."""
+    if not _is_safe_path(directory_path):
+        return f"Error: Access denied. Directory path '{directory_path}' violates safety or path policies."
+        
+    abs_dir = _get_absolute_path(directory_path)
+    
+    if os.path.exists(abs_dir):
+        if os.path.isdir(abs_dir):
+            return f"Directory '{directory_path}' already exists."
+        else:
+            return f"Error: A file already exists at '{directory_path}'."
+            
+    try:
+        os.makedirs(abs_dir, exist_ok=True)
+        return f"Success: Created directory '{directory_path}'."
+    except Exception as e:
+        return f"Error creating directory '{directory_path}': {e}"
 
 
 def delete_file(filepath: str) -> str:

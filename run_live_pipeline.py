@@ -25,13 +25,13 @@ async def main():
     # Detailed prompt for a rigorous end-to-end fullstack test
     default_query = """
 Build a truly functional, production-ready Fullstack AI Dashboard Platform following the "fullstack-architect" persona.
-You must strictly build this inside the `./workspace/ai_dashboard` directory.
+You must strictly build this inside the `./workspace/ai_platform` directory.
 
 CRITICAL ENGINEERING PRACTICES:
 - Do NOT hand-write massive configuration files (like package.json, vite.config.js, or tsconfig) line-by-line.
-- ALWAYS prioritize using proper CLI scaffolding tools (e.g., `npm create vite@latest`, `npx create-react-app`, `npm install`) via the `run_safe_commands` tool.
+- ALWAYS prioritize using proper CLI scaffolding tools via `run_safe_commands`. VERY IMPORTANT: When running scaffolding commands, you MUST append the `-y` flag (e.g. `npm create vite@latest -y`) to automatically answer YES to any interactive prompts. If you forget `-y`, the terminal will hang indefinitely!
 - Verify your Current Working Directory BEFORE writing files to prevent hallucinating paths and breaking parent directories. 
-- The frontend code must reside strictly inside `./workspace/ai_dashboard/frontend` and backend inside `./workspace/ai_dashboard/backend`.
+- The frontend code must reside strictly inside `./workspace/ai_platform/frontend` and backend inside `./workspace/ai_platform/backend`.
 
 Requirements:
 1. Frontend: React + Vite + TailwindCSS. Use component-driven architecture. Create a premium UI with a custom HSL design-system theme (dark/light modes, glassmorphism, smooth gradients, Inter/Roboto fonts, micro-animations).
@@ -57,8 +57,9 @@ Execute this end-to-end. Do not stop until the application is fully functional, 
     
     print("\nRunning Live Multi-Agent pipeline (calling real LLMs)...")
     import traceback
+    import asyncio
     try:
-        result = await graph.ainvoke(initial_state, config=config)
+        result = await asyncio.wait_for(graph.ainvoke(initial_state, config=config), timeout=3600)
         print("\nPipeline run completed successfully.")
         print("\nFinal Answer from Synthesizer:")
         print(result.get("final_answer", "(No final answer found)"))

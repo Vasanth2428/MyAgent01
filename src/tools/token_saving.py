@@ -3,7 +3,7 @@ import logging
 from typing import List, Dict, Any
 
 from src.core.code.parser import extract_symbol_slices, get_symbol_tokens
-from src.tools.coding_tools import _is_safe_path, _has_allowed_extension, _get_absolute_path, view_code_file, edit_code_file
+from src.tools.coding_tools import _is_safe_path, _has_allowed_extension, _get_absolute_path, view_code_file
 
 logger = logging.getLogger("MultiAgent.TokenSavingTools")
 
@@ -97,43 +97,6 @@ def retrieve_symbol_context(symbol_name: str, workspace_root: str = ".") -> Dict
             except Exception as e:
                 logger.warning(f"Failed to process file {rel_path}: {e}")
     return {}
-
-def apply_surgical_edit(filepath: str, target_symbol: str, new_code: str) -> str:
-    """Replace the source of a given symbol with new_code using a minimal edit.
-
-    The function backs up the original file, extracts the target symbol range, and writes the
-    new code in place of the old block via `edit_code_file`. Returns a success/failure message.
-    """
-    if not _is_safe_path(filepath):
-        return f"Error: Access denied. Filepath '{filepath}' violates safety policies."
-    if not _has_allowed_extension(filepath):
-        return f"Error: Access denied. File extension not allowed."
-
-    # Locate the symbol in the file
-    abs_path = _get_absolute_path(filepath)
-    try:
-        with open(abs_path, "rb") as f:
-            content = f.read()
-        slices = extract_symbol_slices(content, abs_path)
-        target = next((s for s in slices if s.get("name") == target_symbol), None)
-        if not target:
-            return f"Error: Symbol '{target_symbol}' not found in '{filepath}'."
-    except Exception as e:
-        return f"Error reading file '{filepath}': {e}"
-
-    # Build the target block's source text from raw lines (avoiding line numbers and headers from view_code_file)
-    try:
-        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-        old_snippet = "".join(lines[target["start_line"] - 1 : target["end_line"]])
-    except Exception as e:
-        return f"Error reading file '{filepath}' for surgical edit: {e}"
-
-    # Use edit_code_file with fuzzy replace (empty target triggers full replace)
-    # We replace the exact block using the original snippet as target
-    result = edit_code_file(filepath, target=old_snippet, replacement=new_code)
-    return result
-
 
 # ---------------------------------------------------------------------------
 # Token-Saving Utilities (Phase 2)

@@ -5,6 +5,7 @@ import os
 import logging
 
 from typing import List, Dict, Optional
+import asyncio
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 
@@ -19,17 +20,13 @@ from src.tools.coding_tools import search_code as _search_code
 from src.tools.coding_tools import list_files as _list_files
 
 from src.tools.coding_tools import create_files as _create_files
-
-from src.tools.coding_tools import modify_files as _modify_files
-
+from src.tools.coding_tools import create_directory as _create_directory
 from src.tools.coding_tools import run_safe_commands as _run_safe_commands
 from src.tools.coding_tools import check_task_status as _check_task_status
 from src.tools.coding_tools import send_task_input as _send_task_input
 from src.tools.coding_tools import kill_task as _kill_task
 
 from src.tools.coding_tools import delete_file as _delete_file
-
-from src.tools.coding_tools import scaffold_react_app as _scaffold_react_app
 
 from src.tools.coding_tools import ingest_documentation as _ingest_documentation
 
@@ -87,6 +84,7 @@ Hard rules:
 - PREVENT HALLUCINATIONS: If you need to use a newer framework or library and are unsure of the exact syntax, you MUST use `search_docs(query, library_name)` first. If no docs exist, use `ingest_documentation(url, library_name)` to learn the official syntax. Never guess fake methods.
 - ARCHITECTURAL DISCIPLINE: Never hand-write or guess the contents of complex structural files like package.json, vite.config.js, or tsconfig.json from scratch. ALWAYS prioritize using standard CLI scaffolding tools (e.g., npx, npm init) to generate them. Validate your target file paths carefully to avoid writing to parent directories by mistake.
 - If blocked by HITL, queue the change and continue tool-calling behavior as instructed; do not claim you lack access.
+- ABSTENTION RULE: If you cannot complete a task using the available tools, or if a critical prerequisite is missing (e.g., you cannot create a folder because a required tool is missing, or a required CLI isn't installed), respond with EXACTLY the text `TASK_IMPOSSIBLE: <reason>` and do not blindly hallucinate commands in a panic. The supervisor will catch this and replan.
 """
 
 
@@ -157,27 +155,10 @@ def create_files(filepath: str, content: str) -> str:
 
     return res
 
-
-
 @tool
-
-def modify_files(filepath: str, target_code: str, replacement_code: str) -> str:
-
-    """Searches for the exact target_code block in the file and replaces it with replacement_code. Target code must match exactly including spaces and indentation. Works inside the repository."""
-
-    res = _modify_files(filepath, target_code, replacement_code)
-
-    if res.startswith("Success:"):
-
-        try:
-
-            get_retrieval_service().sync_index()
-
-        except Exception as e:
-
-            logger.warning(f"Failed to sync code index after file modification: {e}")
-
-    return res
+def create_directory(directory_path: str) -> str:
+    """Create a new directory (and any missing parent directories) inside the workspace."""
+    return _create_directory(directory_path)
 
 @tool
 def multi_replace_file_content(filepath: str, chunks: list) -> str:
@@ -196,10 +177,11 @@ def multi_replace_file_content(filepath: str, chunks: list) -> str:
 
 
 @tool
-def run_safe_commands(command: str, wait_ms_before_async: int = 2000) -> str:
+def run_safe_commands(command: str, directory: str = ".", wait_ms_before_async: int = 2000) -> str:
     """Executes a shell command (like pytest, npm run test) in the repository to compile/test code. 
+    You can optionally specify a 'directory' relative to the workspace root to run the command inside a specific folder (e.g. './workspace/ai_platform/backend').
     It will wait up to WaitMsBeforeAsync for synchronous completion. If it exceeds that, it natively pushes to the background and returns a task ID so you can stream input/output using check_task_status and send_task_input."""
-    return _run_safe_commands(command, wait_ms_before_async)
+    return _run_safe_commands(command, directory, wait_ms_before_async)
 
 @tool
 def check_task_status(task_id: str) -> str:
@@ -633,16 +615,6 @@ def delete_file(filepath: str) -> str:
 
 @tool
 
-def scaffold_react_app(project_name: str) -> str:
-
-    """Scaffolds a new React+Vite application inside `./workspace/[project_name]/`. Creates standard directories and files, and updates parent vite.config.js."""
-
-    return _scaffold_react_app(project_name)
-
-
-
-@tool
-
 def estimate_tokens(text: str) -> str:
 
     """Returns the exact BPE token count for the given text. Use this to pre-check if reading a file or appending output will exceed the context budget. No LLM call — fast local computation."""
@@ -715,7 +687,7 @@ tools_map = {
     "search_code": search_code,
 
     "create_files": create_files,
-    "modify_files": modify_files,
+
     "multi_replace_file_content": multi_replace_file_content,
     "list_files": list_files,
 
@@ -745,7 +717,7 @@ tools_map = {
 
     "delete_file": delete_file,
 
-    "scaffold_react_app": scaffold_react_app,
+
 
     "estimate_tokens": estimate_tokens,
 
@@ -796,7 +768,7 @@ def get_coding_model(task: str = ""):
         logger.info(f"Binding all {len(tools)} tools to coding worker (complex query detected).")
 
     else:
-        active_tools = [read_files, search_code, search_code_hybrid, create_files, modify_files, multi_replace_file_content, list_files, run_safe_commands, check_task_status, send_task_input, kill_task, delete_file, estimate_tokens, get_token_budget_remaining, fetch_file_headers, summarize_tool_output, ingest_documentation, search_docs]
+        active_tools = [read_files, search_code, search_code_hybrid, create_files, create_directory, multi_replace_file_content, list_files, run_safe_commands, check_task_status, send_task_input, kill_task, delete_file, estimate_tokens, get_token_budget_remaining, fetch_file_headers, summarize_tool_output, ingest_documentation, search_docs]
     
 
     provider = resolve_provider("coding_worker", "primary")
@@ -1616,7 +1588,9 @@ async def coding_worker_node(state: dict) -> dict:
     code_modified = state.get("code_modified", False)
     created_files_this_run = []
     tool_history = []  # For Infinite Loop Detection
+    cot_history = []  # For Chain-of-Thought (Thought Loop) Detection
     no_tool_calls_streak = 0
+    episodic_memory_block_streak = 0
 
     while step < max_steps:
         step += 1
@@ -1641,7 +1615,7 @@ async def coding_worker_node(state: dict) -> dict:
         
         # Inject Phase Prompts dynamically
         try:
-            response = await model.ainvoke(agent_messages)
+            response = await asyncio.wait_for(model.ainvoke(agent_messages), timeout=120)
 
         except Exception as e:
 
@@ -1653,10 +1627,26 @@ async def coding_worker_node(state: dict) -> dict:
 
             
 
+        # Add Assistant Response to Memory
         agent_messages.append(response)
-
         
+        # --- Chain-of-Thought (CoT) Loop Detection ---
+        import re
+        import hashlib
+        # Extract reasoning prose (strip out tool JSON blocks to avoid variance from args)
+        thought_prose = re.sub(r'```json.*?```', '', response.content, flags=re.DOTALL).strip()
+        if thought_prose:
+            # Hash the first 200 characters of the reasoning to catch copy-paste loops
+            thought_hash = hashlib.md5(thought_prose[:200].encode()).hexdigest()
+            cot_history.append(thought_hash)
+            
+            if len(cot_history) >= 3 and cot_history[-1] == cot_history[-2] == cot_history[-3]:
+                print(f"[CRITIC GUARDRAIL] Chain-of-Thought loop detected. Hard blocking.")
+                final_explanation = "Task forcefully aborted due to thought loop: the agent repeated the exact same reasoning 3 times without making progress."
+                broken_out = True
+                break
 
+        # Check for tool calls
         tool_calls = response.tool_calls
 
         if not tool_calls:
@@ -1688,9 +1678,14 @@ async def coding_worker_node(state: dict) -> dict:
             break
             
         # Infinite Loop Detection (Hard Circuit Breaker)
-        import json
+        import hashlib
         try:
-            current_signature = json.dumps([{"name": tc["name"], "args": tc["args"]} for tc in tool_calls], sort_keys=True)
+            fuzzy_signatures = []
+            for tc in tool_calls:
+                args_str = str(tc["args"])[:100]
+                sig = f"{tc['name']}_{args_str}"
+                fuzzy_signatures.append(hashlib.md5(sig.encode()).hexdigest())
+            current_signature = "_".join(sorted(fuzzy_signatures))
             tool_history.append(current_signature)
             if len(tool_history) >= 3 and tool_history[-1] == tool_history[-2] == tool_history[-3]:
                 print(f"[CRITIC GUARDRAIL] Infinite loop detected. Hard blocking.")
@@ -1728,7 +1723,7 @@ async def coding_worker_node(state: dict) -> dict:
 
             import json
             tool_signature_str = f"{tool_name} {json.dumps(tool_args)}"
-            
+
             # 1. Episodic Memory Retrieval (Pre-Execution Guardrail)
             skip_execution = False
             try:
@@ -1744,7 +1739,15 @@ async def coding_worker_node(state: dict) -> dict:
                 logger.warning(f"Failed to query episodic memory: {e}")
                 
             if skip_execution:
+                episodic_memory_block_streak += 1
+                if episodic_memory_block_streak >= 3:
+                    print(f"[CRITIC GUARDRAIL] Episodic memory loop detected. Hard blocking.")
+                    final_explanation = "Task forcefully aborted due to episodic memory loop: attempted the same failed action 3 times."
+                    broken_out = True
+                    break
                 continue
+            else:
+                episodic_memory_block_streak = 0
 
             if tool_name in ["create_files", "modify_files", "delete_file", "multi_replace_file_content", "run_safe_commands"]:
                 filepath = tool_args.get("filepath", "")
@@ -1935,7 +1938,8 @@ async def coding_worker_node(state: dict) -> dict:
 
             break
 
-            
+        if broken_out:
+            break
 
     completed = True
 

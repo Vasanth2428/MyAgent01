@@ -8,6 +8,7 @@ import uuid
 import hashlib
 import logging
 import threading
+import asyncio
 from typing import Dict, List, Optional, Literal, Any
 
 from pydantic import BaseModel, Field
@@ -459,7 +460,7 @@ async def supervisor_node(state: dict) -> dict:
             model = get_routing_model()
             for attempt in range(3):
                 try:
-                    response = await model.ainvoke(routing_prompt)
+                    response = await asyncio.wait_for(model.ainvoke(routing_prompt), timeout=120)
                     break
                 except Exception as e:
                     if attempt == 2:

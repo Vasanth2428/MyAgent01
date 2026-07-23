@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from typing import List
 
@@ -86,7 +87,7 @@ async def architect_worker_node(state: dict) -> dict:
         ]
         for attempt in range(3):
             try:
-                blueprint: ArchitectureBlueprint = await get_architect_model().ainvoke(messages_prompt)
+                blueprint: ArchitectureBlueprint = await asyncio.wait_for(get_architect_model().ainvoke(messages_prompt), timeout=120)
                 break
             except Exception as e:
                 if attempt == 2:

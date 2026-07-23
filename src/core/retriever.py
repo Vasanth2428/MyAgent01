@@ -180,7 +180,7 @@ class WeaviateRetriever:
                         self.client.collections.create(
                             name="RAGKnowledge",
                             vectorizer_config=wvc.config.Configure.Vectorizer.none(),
-                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hnsw(),
                             properties=[
                                 wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
@@ -205,7 +205,7 @@ class WeaviateRetriever:
                                 model="sentence-transformers/all-MiniLM-L6-v2",
                                 vectorize_collection_name=False,
                             ),
-                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hnsw(),
                             properties=[
                                 wvc.config.Property(name="text", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="tags", data_type=wvc.config.DataType.TEXT_ARRAY),
@@ -234,7 +234,7 @@ class WeaviateRetriever:
                         self.client.collections.create(
                             name="AgentMemory",
                             vectorizer_config=wvc.config.Configure.Vectorizer.none(),
-                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hnsw(),
                             properties=[
                                 wvc.config.Property(name="action_summary", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="outcome", data_type=wvc.config.DataType.TEXT),
@@ -251,7 +251,7 @@ class WeaviateRetriever:
                                 model="sentence-transformers/all-MiniLM-L6-v2",
                                 vectorize_collection_name=False,
                             ),
-                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hnsw(),
                             properties=[
                                 wvc.config.Property(name="action_summary", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="outcome", data_type=wvc.config.DataType.TEXT),
@@ -268,7 +268,7 @@ class WeaviateRetriever:
                         self.client.collections.create(
                             name="RAGDocs",
                             vectorizer_config=wvc.config.Configure.Vectorizer.none(),
-                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hnsw(),
                             properties=[
                                 wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="library_name", data_type=wvc.config.DataType.TEXT),
@@ -283,7 +283,7 @@ class WeaviateRetriever:
                                 model="sentence-transformers/all-MiniLM-L6-v2",
                                 vectorize_collection_name=False,
                             ),
-                            vector_index_config=wvc.config.Configure.VectorIndex.hfresh(),
+                            vector_index_config=wvc.config.Configure.VectorIndex.hnsw(),
                             properties=[
                                 wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
                                 wvc.config.Property(name="library_name", data_type=wvc.config.DataType.TEXT),
